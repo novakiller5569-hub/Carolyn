@@ -6,15 +6,17 @@ import {
     showMoviesForEditing,
     showMoviesForDeletion,
     handleEditMovieCallback,
-    handleDeleteMovieCallback
+    handleDeleteMovieCallback,
+    startManualAddFlow,
+    startYouTubeAddFlow
 } from './movieManager';
-import { showSiteSettingsMenu, handleSiteSettingsCallback, handleSiteUpdateResponse } from './siteManager';
-import { handleAiQuery, startAiChat, suggestNewMovies } from './aiHandler';
+import { showSiteSettingsMenu, handleSiteSettingsCallback, handleSiteUpdateResponse, showLiveTvMenu, handleLiveTvSettingsCallback } from './siteManager';
+import { handleAiQuery, startAiChat, suggestNewMovies, endAiChat } from './aiHandler';
 import { getUserState } from './utils';
 import { UserState } from './types';
 import { showCollectionsMenu, handleCollectionCallback } from './collectionManager';
 import { startUserLookup, handleUserLookupResponse } from './userManager';
-import { showMonitoringMenu, handleMonitoringCallback, handleMonitoringUpdateResponse } from './monitoringManager';
+import { showAutomationMenu, handleAutomationCallback, handleAutomationUpdateResponse } from './monitoringManager';
 import { startAddActorFlow, handleActorResponse } from './actorManager';
 
 // Main menu handler for the /start command
@@ -25,15 +27,16 @@ export const handleStartCommand = (bot: TelegramBot, msg: TelegramBot.Message) =
             inline_keyboard: [
                 [{ text: "🎬 Manage Movies", callback_data: "manage_movies" }, { text: "📚 Manage Collections", callback_data: "manage_collections" }],
                 [{ text: "🎭 Manage Actors", callback_data: "manage_actors" }, { text: "👤 Manage Users", callback_data: "manage_users" }],
-                [{ text: "🔭 YouTube Monitoring", callback_data: "monitoring_menu" }, { text: "⚙️ Site Settings", callback_data: "site_settings" }],
-                [{ text: "🧠 AI Suggestions", callback_data: "ai_suggest" }, { text: "📊 AI Analytics", callback_data: "ai_analytics" }],
+                [{ text: "📺 Live TV Settings", callback_data: "manage_livetv" }, { text: "🤖 Automation", callback_data: "automation_menu" }],
+                [{ text: "⚙️ Site Settings", callback_data: "site_settings" }, { text: "🧠 AI Suggestions", callback_data: "ai_suggest" }],
+                [{ text: "📊 AI Analytics Chat", callback_data: "ai_analytics" }],
             ]
         }
     });
 };
 
 // Router for all callback queries from inline keyboards
-export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.CallbackQuery, refreshMonitoring?: () => void) => {
+export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.CallbackQuery, refreshAutomation?: () => void) => {
     if (!query.message || !query.data) return;
 
     const chatId = query.message.chat.id;
@@ -43,7 +46,9 @@ export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.Callbac
     const routeAction = (data: string) => {
         // Movie Management
         if (data === 'manage_movies') showMovieMenu(bot, chatId, messageId);
-        else if (data === 'add_movie') startAddMovieFlow(bot, chatId);
+        else if (data === 'add_movie') startAddMovieFlow(bot, chatId, messageId);
+        else if (data === 'add_movie_youtube') startYouTubeAddFlow(bot, chatId);
+        else if (data === 'add_movie_manual') startManualAddFlow(bot, chatId);
         else if (data === 'edit_movie_select') showMoviesForEditing(bot, chatId, messageId);
         else if (data.startsWith('edit_movie_')) handleEditMovieCallback(bot, query);
         else if (data === 'delete_movie_select') showMoviesForDeletion(bot, chatId, messageId);
@@ -56,6 +61,10 @@ export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.Callbac
         // Actor Management
         else if (data === 'manage_actors') showActorMenu(bot, chatId, messageId);
         else if (data === 'add_actor') startAddActorFlow(bot, chatId);
+        
+        // Live TV Management
+        else if (data === 'manage_livetv') showLiveTvMenu(bot, chatId, messageId);
+        else if (data.startsWith('livetv_')) handleLiveTvSettingsCallback(bot, query);
 
         // Site Settings
         else if (data === 'site_settings') showSiteSettingsMenu(bot, chatId, messageId);
@@ -65,13 +74,15 @@ export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.Callbac
         else if (data === 'manage_users') showUserMenu(bot, chatId, messageId);
         else if (data === 'user_lookup') startUserLookup(bot, chatId);
 
-        // Monitoring
-        else if (data === 'monitoring_menu') showMonitoringMenu(bot, chatId, messageId);
-        else if (data.startsWith('monitoring_')) handleMonitoringCallback(bot, query, refreshMonitoring);
+        // Automation
+        else if (data === 'automation_menu') showAutomationMenu(bot, chatId, messageId);
+        else if (data.startsWith('automation_')) handleAutomationCallback(bot, query, refreshAutomation);
 
         // AI Features
         else if (data === 'ai_analytics') startAiChat(bot, chatId);
         else if (data === 'ai_suggest') suggestNewMovies(bot, chatId);
+        else if (data === 'ai_end_chat') endAiChat(bot, chatId, messageId);
+
 
         // Navigation
         else if (data === 'main_menu') handleStartCommand(bot, { chat: { id: chatId } } as TelegramBot.Message);
@@ -91,12 +102,12 @@ export const handleMessage = async (bot: TelegramBot, msg: TelegramBot.Message) 
     
     // Route to the appropriate handler based on the command in the user's state
     const { command } = userState;
-    if (command.startsWith('add_movie') || command.startsWith('edit_movie_')) await handleAddMovieResponse(bot, msg);
+    if (command.startsWith('add_movie_manual') || command.startsWith('add_movie_youtube') || command.startsWith('edit_movie_')) await handleAddMovieResponse(bot, msg);
     else if (command.startsWith('collection_')) await handleCollectionCallback(bot, { message: msg } as TelegramBot.CallbackQuery);
     else if (command.startsWith('actor_')) await handleActorResponse(bot, msg);
     else if (command.startsWith('sitesettings_')) await handleSiteUpdateResponse(bot, msg);
     else if (command === 'user_lookup_email') await handleUserLookupResponse(bot, msg);
-    else if (command.startsWith('monitoring_')) await handleMonitoringUpdateResponse(bot, msg);
+    else if (command.startsWith('automation_')) await handleAutomationUpdateResponse(bot, msg);
     else if (command === 'ai_chat') await handleAiQuery(bot, msg);
 };
 

@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../services/types';
 import * as storage from '../services/storageService';
@@ -7,10 +8,11 @@ const ADMIN_EMAIL = 'ayeyemiademola5569@gmail.com';
 interface AuthContextType {
   currentUser: User | null;
   login: (email: string, password: string) => Promise<User | null>;
-  signup: (name: string, email: string, password: string) => Promise<User | null>;
+  signup: (name: string, email: string, password: string, username: string) => Promise<User | null>;
   logout: () => void;
   loading: boolean;
   isAdmin: boolean;
+  updateCurrentUser: (user: User) => void;
 }
 
 
@@ -45,11 +47,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return null;
   };
 
-  const signup = async (name: string, email: string, password: string): Promise<User | null> => {
+  const signup = async (name: string, email: string, password: string, username: string): Promise<User | null> => {
     try {
-      // The User object expects a 'passwordHash' property. This now correctly passes the password
-      // from the form to the 'passwordHash' field when creating a new user.
-      const newUser = storage.addUser({ name, email, passwordHash: password });
+      const newUser = storage.addUser({ name, email, passwordHash: password, username });
       setCurrentUser(newUser);
       storage.createSession(newUser.id);
       return newUser;
@@ -63,9 +63,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setCurrentUser(null);
     storage.clearSession();
   };
+
+  const updateCurrentUser = (user: User) => {
+    setCurrentUser(user);
+  };
   
   const isAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL;
-  const value = { currentUser, login, signup, logout, loading, isAdmin };
+  const value = { currentUser, login, signup, logout, loading, isAdmin, updateCurrentUser };
 
   return (
     <AuthContext.Provider value={value}>

@@ -25,6 +25,18 @@ export interface SiteConfig {
     name: string;
     tagline: string;
     featuredMovieId?: string | null;
+    liveTvEnabled: boolean;
+    liveTvUrl: string;
+    copyrightYear: string;
+    contact: {
+        email: string;
+        phone: string;
+        address: string;
+    };
+    socials: {
+        platform: string;
+        url: string;
+    }[];
 }
 
 export interface Actor {

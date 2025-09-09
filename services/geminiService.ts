@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type, Chat } from "@google/genai";
-import { Movie, User } from "./types";
+import { Movie, User, SiteConfig } from "./types";
 import { getViewingHistory } from "./storageService";
+import { getAnalyticsSummary } from "./analyticsService";
 
 
 // Use the hardcoded Gemini API key provided by the user.
@@ -16,24 +17,49 @@ const model = 'gemini-2.5-flash';
 let chat: Chat | null = null;
 let lastSystemInstruction = '';
 
-const getSystemInstruction = (movies: Movie[]) => {
+const getSystemInstruction = (movies: Movie[], siteConfig: SiteConfig, isAdmin: boolean) => {
     const movieContext = movies.map(movie => {
         return `ID: ${movie.id}, Title: ${movie.title}, Genre: ${movie.genre}, Category: ${movie.category}, Description: ${movie.description}`;
     }).join('\n');
 
-    return `You are a smart and helpful AI assistant for "Yoruba Cinemax", a Yoruba movie streaming website. Your primary goal is to help users.
+    let instruction = `You are a smart and helpful AI assistant for "${siteConfig.name}", a Yoruba movie streaming website. Your primary goal is to help users.
 
-- For questions about movies available on our platform, answer them using the provided list. When you mention one of these movies, clearly state that it is available on Yoruba Cinemax.
+- The website's URL structure for a movie is /#/movie/{id}. When a user asks for a movie that is available, you MUST provide them with the direct link. For example, a link to Jagun Jagun (ID: jagun-jagun) would be /#/movie/jagun-jagun.
+- The Live TV page is currently ${siteConfig.liveTvEnabled ? 'online. You can direct users to /#/live-tv.' : 'offline. Inform users it is not available right now.'}
+- For questions about movies available on our platform, answer them using the provided list. When you mention one of these movies, clearly state that it is available on ${siteConfig.name}.
 - When asked for recommendations or a list of movies (e.g., "list all action movies"), suggest movies from the provided list.
 - For any other questions about movies, actors, release dates, or general cinema knowledge, use your ability to search the internet to provide accurate, up-to-date information.
-- When you find a movie on the internet that is NOT in our platform's list, be clear that it is not currently available on Yoruba Cinemax.
-- Always maintain the context of the conversation. If a user asks a follow-up question, you should remember what you were talking about.
-- Always be friendly and conversational. Do not output JSON.
+- When you find a movie on the internet that is NOT in our platform's list, be clear that it is not currently available on ${siteConfig.name}.
+- If the user asks for a movie that is NOT on the platform list, first search the web. If you find details, tell the user about the movie and ask "Would you like me to open a request form to send to the admin?" If the user says yes, or if you cannot find any details online, respond with: "I couldn't find that in our library, but I can help you request it. Please fill out the form below." followed immediately by the special command [SHOW_MOVIE_REQUEST_FORM].
+- If a user submits a movie request form with details (e.g., starting with "User has submitted a movie request form..."), your ONLY job is to respond with a confirmation message and a pre-filled email link for them to send. The email link MUST be a markdown mailto link. The recipient is ${siteConfig.contact.email}. The subject should be "New Movie Request: [Movie Title]". The body should contain all the details provided by the user. Example response: "Thanks! I've prepared the request. Please click the link to send it to our team: [Send Movie Request](mailto:${siteConfig.contact.email}?subject=New%20Movie%20Request&body=...)"
+- Always be friendly and conversational. Do not output JSON.`;
+    
+    if (isAdmin) {
+        let days = 1; // Default to today
+        const analytics = getAnalyticsSummary(days);
+        instruction += `\n
+---
+**ADMINISTRATOR MODE ENABLED**
+You are also an admin assistant. If asked about site performance or analytics, use the following real-time data to answer. Be concise and clear.
 
-Here is the list of movies currently available on Yoruba Cinemax:
+**Live Analytics Data (Last 24 hours):**
+- Total Site Visits: ${analytics.dailyVisitors}
+- New User Sign-ups: ${analytics.todaysSignups}
+- Most Popular Movies (by page views):
+  ${analytics.mostClicked.map((m, i) => `${i + 1}. ${m.title} (${m.clicks} views)`).join('\n') || 'No movie pages were viewed.'}
+---`;
+    } else {
+        instruction += `\n
+- **IMPORTANT RULE:** You are speaking to a regular user, NOT an admin. You MUST politely refuse any requests for site analytics, visitor counts, or performance metrics. Do not reveal any numbers or statistics.`;
+    }
+
+
+    instruction += `\nHere is the list of movies currently available on Yoruba Cinemax:
 ---
 ${movieContext}
 ---`;
+
+    return instruction;
 }
 
 
@@ -43,14 +69,14 @@ export interface AiChatResponse {
   sources?: { uri: string; title: string; }[];
 }
 
-export const runChat = async (prompt: string, movies: Movie[]): Promise<AiChatResponse> => {
+export const runChat = async (prompt: string, movies: Movie[], siteConfig: SiteConfig, isAdmin: boolean = false): Promise<AiChatResponse> => {
    if (!movies || movies.length === 0) {
     return { text: "I'm still loading our movie catalog. Please ask me again in a moment!" };
   }
 
   try {
-    const newSystemInstruction = getSystemInstruction(movies);
-    // Initialize or re-initialize chat session if system instruction changes (e.g., movies list updated)
+    const newSystemInstruction = getSystemInstruction(movies, siteConfig, isAdmin);
+    // Initialize or re-initialize chat session if system instruction changes (e.g., movies list updated or admin status changes)
     if (!chat || newSystemInstruction !== lastSystemInstruction) {
         lastSystemInstruction = newSystemInstruction;
         chat = ai.chats.create({

@@ -35,11 +35,27 @@ const readActors = (): Actor[] => {
 };
 const writeActors = (actors: Actor[]) => atomicWrite(ACTORS_PATH, JSON.stringify(actors, null, 2));
 
+const endChatKeyboard = {
+    inline_keyboard: [[{ text: "🔚 End Chat", callback_data: "ai_end_chat" }]]
+};
+
 
 export const startAiChat = (bot: TelegramBot, chatId: number) => {
     setUserState(chatId, { command: 'ai_chat' });
-    bot.sendMessage(chatId, "🤖 You are now chatting with the Analytics AI. Ask me about site activity or the movie catalog. For example:\n- 'How is the site doing today?'\n- 'What movies are similar to Anikulapo?'");
+    bot.sendMessage(chatId, "🤖 You are now chatting with the Analytics AI. Ask me about site activity or the movie catalog. For example:\n- 'How is the site doing today?'\n- 'What movies are similar to Anikulapo?'", {
+        reply_markup: endChatKeyboard
+    });
 };
+
+export const endAiChat = (bot: TelegramBot, chatId: number, messageId: number) => {
+    clearUserState(chatId);
+    bot.editMessageText("🤖 AI chat session ended. You can now use other commands.", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [] } // Remove the button
+    });
+};
+
 
 export const handleAiQuery = async (bot: TelegramBot, msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
@@ -74,11 +90,11 @@ ${movieContext}
 `;
         
         const response = await ai.models.generateContent({ model, contents: query, config: { systemInstruction } });
-        bot.sendMessage(chatId, response.text);
+        bot.sendMessage(chatId, response.text, { reply_markup: endChatKeyboard });
 
     } catch (error) {
         console.error("Gemini API Error:", error);
-        bot.sendMessage(chatId, "Sorry, I'm having trouble thinking right now. Please try again later.");
+        bot.sendMessage(chatId, "Sorry, I'm having trouble thinking right now. Please try again later.", { reply_markup: endChatKeyboard });
     }
 };
 
@@ -112,7 +128,7 @@ export const getWeeklyDigest = async (bot: TelegramBot) => {
     }
     
     console.log("Generating weekly digest...");
-    await bot.sendChatAction(adminId, 'typing');
+    await bot.sendChatAction(parseInt(adminId, 10), 'typing');
     try {
         const analytics = getAnalyticsSummary(7);
         const systemInstruction = `You are an AI assistant generating a weekly performance report for the admin of a movie website. Provide a concise, friendly summary using Markdown formatting. Highlight key numbers and trends.`;
@@ -154,6 +170,41 @@ export const generateActorProfile = async (actorName: string): Promise<Partial<A
         return JSON.parse(response.text);
     } catch (error) {
         console.error(`AI failed to generate profile for ${actorName}:`, error);
+        return null;
+    }
+};
+
+
+export const findNewTrendingMovie = async (existingMovieTitles: string[]): Promise<string | null> => {
+    try {
+        const systemInstruction = `You are a movie scout. Your goal is to find ONE new, popular, full-length Yoruba movie on YouTube that was released between 2022 and 2025.
+- The movie must NOT be in the provided list of existing movie titles.
+- It must be a FULL MOVIE, not a trailer, clip, or review.
+- Prioritize movies from the current year.
+- Use Google Search to find what's trending.
+- If you find a suitable movie, respond with ONLY its YouTube URL and nothing else.
+- If you cannot find a new movie that meets the criteria, respond with the word "null".`;
+        
+        const prompt = `Here are the movies we already have. Find a new one that is NOT on this list:\n\n${existingMovieTitles.join('\n')}`;
+
+        const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+                systemInstruction,
+                tools: [{ googleSearch: {} }],
+                temperature: 0.8,
+            }
+        });
+
+        const text = response.text.trim();
+        if (text.toLowerCase() === 'null' || !text.startsWith('https://')) {
+            return null;
+        }
+        return text;
+
+    } catch (error) {
+        console.error("AI failed to find a new trending movie:", error);
         return null;
     }
 };

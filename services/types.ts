@@ -3,6 +3,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username: string;
+  profilePic?: string;
   passwordHash: string; // In a real app, this would be a hash. Here it's stored as-is for simplicity.
 }
 
@@ -58,7 +60,7 @@ export interface MovieContextType {
 export interface AuthContextType {
   currentUser: User | null;
   login: (email: string, password: string) => Promise<User | null>;
-  signup: (name: string, email: string, password: string) => Promise<User | null>;
+  signup: (name: string, email: string, password: string, username: string) => Promise<User | null>;
   logout: () => void;
   loading: boolean;
 }
@@ -68,4 +70,23 @@ export interface Collection {
   title: string;
   description: string;
   movieIds: string[];
+}
+
+export interface SiteConfig {
+    name: string;
+    tagline: string;
+    featuredMovieId?: string | null;
+    liveTvEnabled: boolean;
+    liveTvUrl: string;
+    // FIX: Add missing properties to SiteConfig to resolve type errors across the application.
+    copyrightYear: string;
+    contact: {
+        email: string;
+        phone: string;
+        address: string;
+    };
+    socials: {
+        platform: string;
+        url: string;
+    }[];
 }

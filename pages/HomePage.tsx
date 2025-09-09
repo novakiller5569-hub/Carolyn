@@ -23,7 +23,8 @@ const FeaturedMovie: React.FC<{ movie: Movie }> = React.memo(({ movie }) => (
       <div className="container mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center gap-8 text-white">
         <img src={movie.poster} alt={movie.title} className="w-48 md:w-64 h-auto object-cover rounded-lg shadow-2xl shadow-black/50 hidden md:block" />
         <div className="md:w-1/2 text-center md:text-left">
-          <h1 className="text-4xl md:text-6xl font-black">{movie.title}</h1>
+          <h2 className="text-sm font-bold tracking-widest text-green-400 uppercase">Latest Movie</h2>
+          <h1 className="text-4xl md:text-6xl font-black mt-1">{movie.title}</h1>
           <div className="flex items-center justify-center md:justify-start space-x-4 my-4">
             <div className="flex items-center text-yellow-400">
               <StarIcon className="w-5 h-5 mr-1" />
@@ -68,15 +69,10 @@ const HomePage: React.FC = () => {
   const isInitialMount = useRef(true);
 
   const featuredMovie = useMemo(() => {
-      if (!movies || movies.length === 0) return null;
-      // Prioritize the featured movie from site config
-      if (config.featuredMovieId) {
-          const fm = movies.find(m => m.id === config.featuredMovieId);
-          if (fm) return fm;
-      }
-      // Fallback to the most popular movie
-      return [...movies].sort((a, b) => b.popularity - a.popularity)[0];
-  }, [movies, config.featuredMovieId]);
+    if (!movies || movies.length === 0) return null;
+    // Always show the newest movie based on the createdAt date.
+    return [...movies].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  }, [movies]);
   
   const trendingMovies = useMemo(() => {
     if (!movies || movies.length === 0) return [];

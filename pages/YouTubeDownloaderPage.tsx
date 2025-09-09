@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import BackButton from '../components/BackButton';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { LinkIcon, DownloadIcon } from '../components/icons/Icons';
@@ -18,13 +19,15 @@ const DOWNLOAD_OPTIONS = [
 ];
 
 const YouTubeDownloaderPage: React.FC = () => {
-  const [url, setUrl] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlFromQuery = searchParams.get('url');
+
+  const [url, setUrl] = useState(urlFromQuery || '');
   const [isLoading, setIsLoading] = useState(false);
   const [videoDetails, setVideoDetails] = useState<typeof MOCKED_VIDEO_DETAILS | null>(null);
 
-  const handleFetchVideo = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) return;
+  const handleVideoFetch = (videoUrl: string) => {
+    if (!videoUrl.trim()) return;
 
     setIsLoading(true);
     setVideoDetails(null);
@@ -35,6 +38,18 @@ const YouTubeDownloaderPage: React.FC = () => {
       setIsLoading(false);
     }, 1500);
   };
+  
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleVideoFetch(url);
+  };
+
+  useEffect(() => {
+    if (urlFromQuery) {
+      setUrl(urlFromQuery);
+      handleVideoFetch(urlFromQuery);
+    }
+  }, [urlFromQuery]);
 
   return (
     <div className="max-w-4xl mx-auto py-8">
@@ -49,7 +64,7 @@ const YouTubeDownloaderPage: React.FC = () => {
       </section>
 
       <section className="mt-12">
-        <form onSubmit={handleFetchVideo} className="flex flex-col sm:flex-row gap-2">
+        <form onSubmit={handleFormSubmit} className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-grow">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <LinkIcon className="h-5 w-5 text-gray-400" />

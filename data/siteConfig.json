@@ -1,5 +1,32 @@
+
 {
   "name": "Yoruba Cinemax",
   "tagline": "Nigeria's Premier Yoruba Movie Destination",
-  "featuredMovieId": null
+  "featuredMovieId": null,
+  "liveTvEnabled": false,
+  "liveTvUrl": "",
+  "copyrightYear": "2024",
+  "contact": {
+    "email": "support@yorubacinemax.com",
+    "phone": "+234-123-456-7890",
+    "address": "123 Film House, Ikeja, Lagos."
+  },
+  "socials": [
+    {
+      "platform": "Facebook",
+      "url": "#"
+    },
+    {
+      "platform": "Twitter",
+      "url": "#"
+    },
+    {
+      "platform": "Instagram",
+      "url": "#"
+    },
+    {
+      "platform": "YouTube",
+      "url": "#"
+    }
+  ]
 }

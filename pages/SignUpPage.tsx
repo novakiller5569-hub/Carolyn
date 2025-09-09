@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storageService';
+import * as analytics from '../services/analyticsService';
 import { FilmIcon } from '../components/icons/Icons';
 
 // Validates a real Gmail address, rejecting "dot" and "plus" aliases.
@@ -24,6 +25,7 @@ const SignUpPage: React.FC = () => {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     
@@ -53,10 +55,16 @@ const SignUpPage: React.FC = () => {
           return;
       }
       
+      if (storage.isUsernameTaken(username)) {
+          setError('This username is already taken. Please choose another.');
+          return;
+      }
+      
       setIsLoading(true);
       try {
-        const user = await signup(name, email, password);
+        const user = await signup(name, email, password, username);
         if (user) {
+          analytics.logSignup();
           navigate(from, { replace: true });
         } else {
           setError('Failed to create an account. Please try again.');
@@ -91,6 +99,22 @@ const SignUpPage: React.FC = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Full Name"
+                className="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+            </div>
+            <div>
+                <label htmlFor="username" className="text-sm font-medium text-gray-300 sr-only">Username</label>
+                <input
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                pattern="^[a-zA-Z0-9_]{3,25}$"
+                title="Username must be 3-25 characters and can only contain letters, numbers, and underscores (e.g., ademola_001)."
                 className="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
             </div>

@@ -1,7 +1,8 @@
+
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
-import { StarIcon, UserIcon, ReplyIcon, ChevronDownIcon, ChevronUpIcon, BotIcon, SparklesIcon, ThumbsUpIcon, BookmarkIcon, FacebookIcon, TwitterIcon, ChevronLeftIcon, ChevronRightIcon, XIcon } from '../components/icons/Icons';
+import { StarIcon, UserIcon, ReplyIcon, ChevronDownIcon, ChevronUpIcon, BotIcon, SparklesIcon, ThumbsUpIcon, BookmarkIcon, FacebookIcon, XSocialIcon, ChevronLeftIcon, ChevronRightIcon, XIcon, WhatsAppIcon, TelegramIcon } from '../components/icons/Icons';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { Comment, Movie } from '../services/types';
 import { getAiRecommendations } from '../services/geminiService';
@@ -9,6 +10,7 @@ import BackButton from '../components/BackButton';
 import { useMovies } from '../contexts/MovieContext';
 import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storageService';
+import * as analytics from '../services/analyticsService';
 
 
 // --- SOCIAL SHARE COMPONENT ---
@@ -19,16 +21,24 @@ const SocialShare: React.FC<{ movie: Movie }> = ({ movie }) => {
     const platforms = {
         twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
         facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+        whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(text + ' ' + url)}`,
+        telegram: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
     };
 
     return (
         <div className="flex items-center gap-3 mt-6">
             <span className="text-sm font-semibold text-gray-300">Share:</span>
-            <a href={platforms.twitter} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-blue-400 transition-colors" aria-label="Share on Twitter">
-                <TwitterIcon className="w-4 h-4" />
+            <a href={platforms.twitter} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-black transition-colors" aria-label="Share on X (Twitter)">
+                <XSocialIcon className="w-4 h-4" />
             </a>
             <a href={platforms.facebook} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-blue-600 transition-colors" aria-label="Share on Facebook">
                 <FacebookIcon className="w-4 h-4" />
+            </a>
+             <a href={platforms.whatsapp} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-green-500 transition-colors" aria-label="Share on WhatsApp">
+                <WhatsAppIcon className="w-4 h-4" />
+            </a>
+            <a href={platforms.telegram} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-blue-500 transition-colors" aria-label="Share on Telegram">
+                <TelegramIcon className="w-4 h-4" />
             </a>
         </div>
     );
@@ -125,7 +135,6 @@ const CommentItem: React.FC<{
     const [showReplies, setShowReplies] = useState(true);
     const { currentUser, isAdmin } = useAuth();
     
-    // Check if the author of this comment is the admin
     const commentUser = useMemo(() => storage.getUserById(comment.userId), [comment.userId]);
     const isOwner = commentUser?.email === 'ayeyemiademola5569@gmail.com';
 
@@ -151,11 +160,22 @@ const CommentItem: React.FC<{
         }
     };
 
+    const UserAvatar: React.FC = () => {
+        if (comment.isAI) {
+            return <div className="w-10 h-10 flex-shrink-0 bg-green-500 rounded-full flex items-center justify-center"><BotIcon className="w-6 h-6"/></div>;
+        }
+        if (commentUser?.profilePic) {
+            return <img src={commentUser.profilePic} alt={commentUser.name} className="w-10 h-10 flex-shrink-0 rounded-full object-cover" />;
+        }
+        return <div className="w-10 h-10 flex-shrink-0 bg-gray-700 rounded-full flex items-center justify-center"><UserIcon className="w-6 h-6 text-gray-400" /></div>;
+    };
+
+
     return (
         <div className={`ml-${comment.parentId ? '6' : '0'} mt-4`}>
             <div className="flex items-start space-x-3">
-                 <div className="flex-shrink-0 w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center">
-                    {comment.isAI ? <BotIcon className="w-6 h-6 text-green-400" /> : <UserIcon className="w-6 h-6 text-gray-400" />}
+                 <div className="flex-shrink-0">
+                    <UserAvatar />
                 </div>
                 <div className="flex-1">
                     <div className="bg-gray-800 rounded-lg p-3 border border-gray-700/50">
@@ -344,7 +364,10 @@ const MovieDetailsPage: React.FC = () => {
     if (currentUser && id) {
         storage.addToViewingHistory(currentUser.id, id);
     }
-  }, [id, currentUser]);
+    if (movie) {
+        analytics.logMovieClick(movie.id, movie.title);
+    }
+  }, [id, currentUser, movie]);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
@@ -393,6 +416,42 @@ const MovieDetailsPage: React.FC = () => {
   }
 
   const relatedMovies = movies.filter(m => m.category === movie.category && m.id !== movie.id).slice(0, 5);
+  const isYouTubeLink = movie.downloadLink && (movie.downloadLink.includes('youtube.com') || movie.downloadLink.includes('youtu.be'));
+
+  const DownloadButton = () => {
+    const commonClasses = "inline-block w-full text-center sm:w-auto bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-10 rounded-full text-lg shadow-lg hover:shadow-green-500/40 transition-all duration-300 transform hover:scale-105";
+
+    if (movie.status === 'coming-soon') {
+      return (
+        <div className="inline-block w-full text-center sm:w-auto bg-gray-700 text-white font-bold py-3 px-10 rounded-full text-lg">
+          Coming Soon
+        </div>
+      );
+    }
+    
+    if (isYouTubeLink) {
+        return (
+            <Link
+                to={`/youtube-downloader?url=${encodeURIComponent(movie.downloadLink)}`}
+                className={commonClasses}
+            >
+                Download Movie
+            </Link>
+        );
+    }
+
+    return (
+        <a
+            href={movie.downloadLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={commonClasses}
+        >
+            Download Movie
+        </a>
+    );
+  };
+
 
   return (
     <div>
@@ -426,18 +485,7 @@ const MovieDetailsPage: React.FC = () => {
                     <p><strong className="text-gray-200">Genre:</strong> {movie.genre}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4 mt-8">
-                    {movie.status === 'coming-soon' ? (
-                        <div className="inline-block w-full text-center sm:w-auto bg-gray-700 text-white font-bold py-3 px-10 rounded-full text-lg">
-                            Coming Soon
-                        </div>
-                    ) : (
-                        <Link
-                            to="/youtube-downloader"
-                            className="inline-block w-full text-center sm:w-auto bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-10 rounded-full text-lg shadow-lg hover:shadow-green-500/40 transition-all duration-300 transform hover:scale-105"
-                        >
-                            Download Movie
-                        </Link>
-                    )}
+                    <DownloadButton />
                     {currentUser && (
                          <button onClick={handleWatchlistToggle} className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 transform hover:scale-105 ${inWatchlist ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-900'}`}>
                             <BookmarkIcon className="w-5 h-5"/>

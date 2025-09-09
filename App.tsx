@@ -1,5 +1,5 @@
 
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -12,6 +12,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import WelcomePopup from './components/WelcomePopup';
 import { SiteConfigProvider } from './contexts/SiteConfigContext';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import * as analytics from './services/analyticsService';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const MovieDetailsPage = lazy(() => import('./pages/MovieDetailsPage'));
@@ -23,9 +24,16 @@ const SignUpPage = lazy(() => import('./pages/SignUpPage'));
 const ActorPage = lazy(() => import('./pages/ActorPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const LiveTvPage = lazy(() => import('./pages/LiveTvPage'));
 
 
 const App: React.FC = () => {
+
+  useEffect(() => {
+    analytics.logVisit();
+  }, []);
+
   return (
     <SiteConfigProvider>
       <AuthProvider>
@@ -51,6 +59,8 @@ const App: React.FC = () => {
                     <Route path="/actor/:name" element={<ActorPage />} />
                     <Route path="/watchlist" element={<WatchlistPage />} />
                     <Route path="/collections" element={<CollectionsPage />} />
+                    <Route path="/profile" element={<ProfilePage />} />
+                    <Route path="/live-tv" element={<LiveTvPage />} />
                   </Routes>
                 </Suspense>
               </main>

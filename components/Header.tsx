@@ -1,7 +1,7 @@
 
 import React, { useState, Fragment } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { MenuIcon, XIcon, SearchIcon, FilmIcon, UserCircleIcon, BookmarkIcon, LogoutIcon } from './icons/Icons';
+import { MenuIcon, XIcon, SearchIcon, FilmIcon, UserCircleIcon, BookmarkIcon, LogoutIcon, UserIcon } from './icons/Icons';
 import SearchBar from './SearchBar';
 import { useAuth } from '../contexts/AuthContext';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
@@ -13,12 +13,16 @@ const Header: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const { config } = useSiteConfig();
 
-  const navLinks = [
+  const baseNavLinks = [
     { name: 'Home', path: '/' },
     { name: 'Trending', path: '/trending' },
     { name: 'Collections', path: '/collections'},
     { name: 'Downloader', path: '/youtube-downloader' },
   ];
+  
+  const navLinks = config.liveTvEnabled
+    ? [...baseNavLinks.slice(0, 2), { name: 'Live TV', path: '/live-tv' }, ...baseNavLinks.slice(2)]
+    : baseNavLinks;
 
   const activeLinkClass = "text-white bg-green-600";
   const inactiveLinkClass = "text-gray-300 hover:bg-gray-700 hover:text-white";
@@ -63,8 +67,12 @@ const Header: React.FC = () => {
             </button>
             {currentUser ? (
               <div className="relative">
-                <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-full transition-colors duration-300">
-                  <UserCircleIcon />
+                <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="flex items-center justify-center w-10 h-10 bg-gray-700 rounded-full hover:ring-2 hover:ring-green-500 transition-all">
+                  {currentUser.profilePic ? (
+                    <img src={currentUser.profilePic} alt="Profile" className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    <UserIcon className="w-6 h-6 text-gray-300" />
+                  )}
                 </button>
                 {isProfileOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50 border border-gray-700">
@@ -72,6 +80,9 @@ const Header: React.FC = () => {
                         Signed in as<br/>
                         <span className="font-semibold">{currentUser.name}</span>
                     </div>
+                    <Link to="/profile" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                        <UserCircleIcon className="w-4 h-4" /> My Profile
+                    </Link>
                     <Link to="/watchlist" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
                         <BookmarkIcon className="w-4 h-4" /> My Watchlist
                     </Link>
@@ -124,6 +135,9 @@ const Header: React.FC = () => {
                     <div className="px-3 py-2 text-base font-medium text-white">
                         Hi, {currentUser.name}
                     </div>
+                     <Link to="/profile" onClick={closeAllMenus} className={`block px-3 py-2 rounded-md text-base font-medium ${inactiveLinkClass}`}>
+                        My Profile
+                    </Link>
                     <Link to="/watchlist" onClick={closeAllMenus} className={`block px-3 py-2 rounded-md text-base font-medium ${inactiveLinkClass}`}>
                         My Watchlist
                     </Link>

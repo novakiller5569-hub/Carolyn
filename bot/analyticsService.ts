@@ -31,31 +31,33 @@ const writeLog = (log: LogEntry[]) => {
 };
 
 // --- "REAL" DATA SIMULATION ---
-// In a real app, these would be called from the frontend API.
-// Here we simulate them being called periodically.
+// This simulates frontend activity for the Telegram bot's analytics.
+// NOTE: This is separate from the frontend's actual localStorage-based analytics.
 const logEvent = (entry: Omit<LogEntry, 'timestamp'>) => {
     const log = readLog();
     const newEntry: LogEntry = { ...entry, timestamp: new Date().toISOString() };
     log.push(newEntry);
-    // Keep the log from getting too large
-    if (log.length > 5000) {
-        log.shift();
-    }
+    if (log.length > 500) log.shift(); // Keep log size manageable
     writeLog(log);
 };
 
-// Simulate some traffic for demonstration
+// Simulate some traffic for demonstration purposes to make bot analytics look active.
+const sampleMovieTitles = ["Jagun Jagun (The Warrior)", "Aníkúlápó", "King of Thieves (Ogundabede)", "Gangs of Lagos"];
 setInterval(() => {
-    logEvent({ type: 'VISIT' });
-    if (Math.random() < 0.05) {
+    // Simulate a few visits
+    for (let i = 0; i < Math.floor(Math.random() * 5) + 1; i++) {
+        logEvent({ type: 'VISIT' });
+    }
+    // Simulate a chance of a signup
+    if (Math.random() < 0.1) {
         logEvent({ type: 'SIGNUP' });
     }
-}, 30 * 60 * 1000); // Simulate a visit every 30 minutes
-
-// Public function to be called from other parts of a REAL app
-export const logMovieClick = (movieId: string, movieTitle: string) => {
-    logEvent({ type: 'MOVIE_CLICK', payload: { movieId, movieTitle } });
-};
+    // Simulate a few movie clicks
+    for (let i = 0; i < Math.floor(Math.random() * 3); i++) {
+        const movieTitle = sampleMovieTitles[Math.floor(Math.random() * sampleMovieTitles.length)];
+        logEvent({ type: 'MOVIE_CLICK', payload: { movieTitle } });
+    }
+}, 3 * 60 * 1000); // Simulate activity every 3 minutes.
 
 
 // --- ANALYTICS DATA RETRIEVAL ---

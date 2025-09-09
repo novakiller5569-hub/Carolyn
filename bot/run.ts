@@ -1,11 +1,11 @@
-// FIX: Declare 'process' to resolve TypeScript errors about missing Node.js type definitions.
+// FIX: Declare 'process' to resolve TypeScript error about missing Node.js type definitions.
 declare const process: any;
 
 import TelegramBot from 'node-telegram-bot-api';
 import { handleStartCommand, handleCallbackQuery, handleMessage } from './commands';
 import { clearAllUserStates } from './utils';
 import { getWeeklyDigest } from './aiHandler';
-import { checkMonitoredChannels, getMonitoringConfig } from './monitoringManager';
+import { getAutomationConfig, checkChannelSpecificMonitor, runAutonomousFinder } from './monitoringManager';
 
 // This file is required by index.ts and assumes environment checks have passed.
 
@@ -57,29 +57,46 @@ const scheduleWeeklyDigest = () => {
 };
 
 
-// 2. YouTube Channel Monitoring
+// 2. Automation Tasks (Channel Monitor & Autonomous Finder)
 // FIX: Changed NodeJS.Timeout to 'any' to resolve TypeScript error about missing Node.js type definitions.
-let monitoringInterval: any | null = null;
+let channelMonitorInterval: any | null = null;
+let autonomousFinderInterval: any | null = null;
 
-const setupMonitoringInterval = () => {
-    if (monitoringInterval) {
-        clearInterval(monitoringInterval);
-    }
-    const config = getMonitoringConfig();
-    if (config.enabled && config.checkIntervalMinutes > 0) {
-        const intervalMs = config.checkIntervalMinutes * 60 * 1000;
-        monitoringInterval = setInterval(() => {
-            console.log("Running scheduled task: YouTube Channel Monitoring...");
-            checkMonitoredChannels(bot);
+const setupAutomationIntervals = () => {
+    // Clear existing intervals to allow for config reloads
+    if (channelMonitorInterval) clearInterval(channelMonitorInterval);
+    if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
+
+    const config = getAutomationConfig();
+
+    // Setup Channel-Specific Monitor (the old system)
+    if (config.channelMonitor.enabled && config.channelMonitor.checkIntervalMinutes > 0) {
+        const intervalMs = config.channelMonitor.checkIntervalMinutes * 60 * 1000;
+        channelMonitorInterval = setInterval(() => {
+            console.log("Running scheduled task: Channel-Specific Monitoring...");
+            checkChannelSpecificMonitor(bot);
         }, intervalMs);
-        console.log(`YouTube channel monitoring scheduled to run every ${config.checkIntervalMinutes} minutes.`);
+        console.log(`Channel-specific monitoring scheduled to run every ${config.channelMonitor.checkIntervalMinutes} minutes.`);
     } else {
-        console.log("YouTube channel monitoring is disabled or has no interval set.");
+        console.log("Channel-specific monitoring is disabled.");
+    }
+
+    // Setup Autonomous Movie Finder (the new system)
+    if (config.autonomousFinder.enabled && config.autonomousFinder.checkIntervalMinutes > 0) {
+        const intervalMs = config.autonomousFinder.checkIntervalMinutes * 60 * 1000;
+        autonomousFinderInterval = setInterval(() => {
+            console.log("Running scheduled task: Autonomous Movie Finder...");
+            runAutonomousFinder(bot);
+        }, intervalMs);
+        console.log(`Autonomous movie finder scheduled to run every ${config.autonomousFinder.checkIntervalMinutes} minutes.`);
+    } else {
+        console.log("Autonomous movie finder is disabled.");
     }
 };
 
+
 // Initial setup
-setupMonitoringInterval();
+setupAutomationIntervals();
 scheduleWeeklyDigest();
 
 
@@ -107,7 +124,7 @@ const withAdminAuthCallback = (handler: (query: TelegramBot.CallbackQuery) => vo
 
 // --- ROUTING ---
 bot.onText(/\/start/, withAdminAuth((msg) => handleStartCommand(bot, msg)));
-bot.on('callback_query', withAdminAuthCallback((query) => handleCallbackQuery(bot, query, setupMonitoringInterval)));
+bot.on('callback_query', withAdminAuthCallback((query) => handleCallbackQuery(bot, query, setupAutomationIntervals)));
 bot.on('message', withAdminAuth((msg) => {
     if (msg.text && msg.text.startsWith('/')) return;
     handleMessage(bot, msg);
@@ -118,7 +135,8 @@ console.log("✅ Yoruba Cinemax Admin Bot is running!");
 
 process.on('SIGINT', () => {
     console.log("Bot is shutting down...");
-    if (monitoringInterval) clearInterval(monitoringInterval);
+    if (channelMonitorInterval) clearInterval(channelMonitorInterval);
+    if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
     bot.stopPolling().catch(err => console.error("Error stopping polling:", err));
     process.exit();
 });

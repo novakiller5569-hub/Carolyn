@@ -7,19 +7,116 @@ import { BotIcon, SendIcon, XIcon, ChevronDownIcon, GlobeIcon } from './icons/Ic
 import LoadingSpinner from './LoadingSpinner';
 import { useMovies } from '../contexts/MovieContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
+
+// Simple Markdown Link Parser
+const ParsedTextMessage: React.FC<{ text: string }> = ({ text }) => {
+    const linkRegex = /\[([^\]]+)\]\((mailto:[^)]+)\)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+        // Text before the link
+        if (match.index > lastIndex) {
+            parts.push(text.substring(lastIndex, match.index));
+        }
+        // The link
+        const [fullMatch, linkText, url] = match;
+        parts.push(
+            <a
+                href={url}
+                key={match.index}
+                className="text-green-400 font-bold underline hover:text-green-300"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                {linkText}
+            </a>
+        );
+        lastIndex = match.index + fullMatch.length;
+    }
+
+    // Text after the last link
+    if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+    }
+
+    return <p className="text-sm whitespace-pre-wrap">{parts}</p>;
+};
+
+
+const MovieRequestForm: React.FC<{ onSubmit: (data: { title: string, year: string, details: string }) => void; }> = ({ onSubmit }) => {
+    const [formData, setFormData] = useState({ title: '', year: '', details: '' });
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (formData.title.trim()) {
+            onSubmit(formData);
+        }
+    };
+
+    return (
+        <div className="p-3 bg-gray-700 rounded-2xl rounded-bl-none animate-fade-in">
+            <h4 className="font-bold text-white mb-2 text-sm">Movie Request Form</h4>
+            <form onSubmit={handleSubmit} className="space-y-2">
+                <input
+                    type="text"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleChange}
+                    placeholder="Movie Title *"
+                    required
+                    className="w-full bg-gray-800 border border-gray-600 rounded-md py-1.5 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                />
+                <input
+                    type="text"
+                    name="year"
+                    value={formData.year}
+                    onChange={handleChange}
+                    placeholder="Release Year (Optional)"
+                    className="w-full bg-gray-800 border border-gray-600 rounded-md py-1.5 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                />
+                <textarea
+                    name="details"
+                    value={formData.details}
+                    onChange={handleChange}
+                    rows={2}
+                    placeholder="Other details (e.g., actors, director) (Optional)"
+                    className="w-full bg-gray-800 border border-gray-600 rounded-md py-1.5 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                />
+                <button type="submit" className="w-full bg-green-600 text-white font-semibold py-1.5 rounded-md text-sm hover:bg-green-500 transition-colors">
+                    Submit Request
+                </button>
+            </form>
+        </div>
+    );
+};
+
 
 const AiChatPopup: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+  const { config: siteConfig } = useSiteConfig();
   
   const getInitialMessage = () => {
       const welcomeText = currentUser ? `Hello ${currentUser.name}!` : "Hello!";
-      return { sender: 'ai' as const, text: `${welcomeText} I'm your Yoruba Cinemax assistant. Ask me for movie recommendations or anything about our films.` };
+      let assistanceText = "I'm your Yoruba Cinemax assistant. Ask me for movie recommendations or if you can't find a movie.";
+      if (isAdmin) {
+          assistanceText += "\n\nAs an admin, you can also ask me for live site analytics (e.g., 'How many visits today?').";
+      }
+      return { sender: 'ai' as const, text: `${welcomeText} ${assistanceText}` };
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>([getInitialMessage()]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showRequestForm, setShowRequestForm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { movies } = useMovies();
 
@@ -27,23 +124,30 @@ const AiChatPopup: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(scrollToBottom, [messages]);
+  useEffect(scrollToBottom, [messages, showRequestForm]);
   
   useEffect(() => {
-    // Reset message history if user logs in/out while chat is open
     setMessages([getInitialMessage()]);
-  }, [currentUser]);
+  }, [currentUser, isAdmin]);
 
-  const handleSendMessage = async () => {
-    if (userInput.trim() === '' || isLoading) return;
-    const userMessage: ChatMessage = { sender: 'user', text: userInput };
+  const handleSendMessage = async (prompt: string) => {
+    if (prompt.trim() === '' || isLoading) return;
+
+    const userMessage: ChatMessage = { sender: 'user', text: prompt };
     setMessages(prev => [...prev, userMessage]);
     setUserInput('');
     setIsLoading(true);
 
     try {
-      const aiResponse = await runChat(userInput, movies);
-      const aiMessage: ChatMessage = { sender: 'ai', text: aiResponse.text, movie: aiResponse.movie, sources: aiResponse.sources };
+      const aiResponse = await runChat(prompt, movies, siteConfig, isAdmin);
+      let responseText = aiResponse.text;
+      
+      if (responseText.includes('[SHOW_MOVIE_REQUEST_FORM]')) {
+        responseText = responseText.replace('[SHOW_MOVIE_REQUEST_FORM]', '').trim();
+        setShowRequestForm(true);
+      }
+
+      const aiMessage: ChatMessage = { sender: 'ai', text: responseText, movie: aiResponse.movie, sources: aiResponse.sources };
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error("Gemini API error:", error);
@@ -54,9 +158,16 @@ const AiChatPopup: React.FC = () => {
     }
   };
 
+  const handleFormSubmit = async (formData: { title: string, year: string, details: string }) => {
+    setShowRequestForm(false);
+    const formSubmissionPrompt = `User has submitted a movie request form with the following details:\nTitle: ${formData.title}\nYear: ${formData.year}\nOther Details: ${formData.details}`;
+    await handleSendMessage(formSubmissionPrompt);
+  };
+
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      handleSendMessage();
+      handleSendMessage(userInput);
     }
   };
   
@@ -89,7 +200,7 @@ const AiChatPopup: React.FC = () => {
           <div key={index} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.sender === 'ai' && <div className="w-8 h-8 flex-shrink-0 bg-green-500 rounded-full flex items-center justify-center"><BotIcon className="w-5 h-5"/></div>}
             <div className={`max-w-[80%] p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-700 text-gray-200 rounded-bl-none'}`}>
-              <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+              <ParsedTextMessage text={msg.text} />
               {msg.movie && (
                 <Link 
                   to={`/movie/${msg.movie.id}`} 
@@ -143,6 +254,14 @@ const AiChatPopup: React.FC = () => {
             </div>
           </div>
         )}
+         {showRequestForm && (
+            <div className="flex items-end gap-2 justify-start">
+                 <div className="w-8 h-8 flex-shrink-0 bg-green-500 rounded-full flex items-center justify-center"><BotIcon className="w-5 h-5"/></div>
+                 <div className="max-w-[80%]">
+                    <MovieRequestForm onSubmit={handleFormSubmit} />
+                 </div>
+            </div>
+         )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -155,12 +274,12 @@ const AiChatPopup: React.FC = () => {
             onKeyPress={handleKeyPress}
             placeholder="Ask for a movie..."
             className="w-full bg-gray-800 border border-gray-600 rounded-full py-2 pl-4 pr-12 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-            disabled={isLoading}
+            disabled={isLoading || showRequestForm}
           />
           <button
-            onClick={handleSendMessage}
+            onClick={() => handleSendMessage(userInput)}
             className="absolute right-1 top-1/2 -translate-y-1/2 bg-green-600 p-2 rounded-full hover:bg-green-500 transition-colors disabled:opacity-50"
-            disabled={isLoading}
+            disabled={isLoading || showRequestForm}
             aria-label="Send message"
           >
             <SendIcon />

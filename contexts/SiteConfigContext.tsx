@@ -1,10 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-interface SiteConfig {
-    name: string;
-    tagline: string;
-    featuredMovieId?: string | null;
-}
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { SiteConfig } from '../services/types';
 
 interface SiteConfigContextType {
     config: SiteConfig;
@@ -17,7 +14,16 @@ const SiteConfigContext = createContext<SiteConfigContextType | undefined>(undef
 const defaultConfig: SiteConfig = {
     name: "Yoruba Cinemax",
     tagline: "Nigeria's Premier Yoruba Movie Destination",
-    featuredMovieId: null
+    featuredMovieId: null,
+    liveTvEnabled: false,
+    liveTvUrl: "",
+    copyrightYear: new Date().getFullYear().toString(),
+    contact: {
+        email: "support@example.com",
+        phone: "+1-234-567-890",
+        address: "123 Movie Lane, Film City"
+    },
+    socials: []
 };
 
 export const SiteConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -34,7 +40,7 @@ export const SiteConfigProvider: React.FC<{ children: ReactNode }> = ({ children
                     throw new Error('Failed to fetch site configuration.');
                 }
                 const data = await response.json();
-                setConfig(data);
+                setConfig(prev => ({ ...prev, ...data })); // Merge with defaults
                 document.title = `${data.name} - ${data.tagline}`;
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'An unknown error occurred');

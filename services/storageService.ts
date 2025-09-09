@@ -1,3 +1,4 @@
+
 import { User, Comment, Upvote } from './types';
 
 /**
@@ -39,22 +40,30 @@ const setItem = <T>(key: string, value: T): void => {
 
 // --- INITIAL DATA SEEDING ---
 const initializeData = () => {
-    if(!localStorage.getItem('YC_INITIALIZED_V2')) {
+    if(!localStorage.getItem('YC_INITIALIZED_V3')) { // Bump version to trigger updates
         localStorage.removeItem('YC_COMMENTS');
-        localStorage.setItem('YC_INITIALIZED_V2', 'true');
+        localStorage.setItem('YC_INITIALIZED_V3', 'true');
     }
 
-    // Seed the admin user if it doesn't exist.
+    // Seed/update the admin user.
     const seedAdminUser = () => {
         const adminEmail = 'ayeyemiademola5569@gmail.com';
-        const users = getUsers();
-        if (!users.some(u => u.email === adminEmail)) {
+        let users = getUsers();
+        const adminUser = users.find(u => u.email === adminEmail);
+
+        if (!adminUser) {
             addUser({
-                name: 'Ademola Ayeyemi', // Admin's display name
+                name: 'Yoruba Cinemax', // Set admin name to site name
                 email: adminEmail,
-                passwordHash: 'Ademola5569'
+                passwordHash: 'Ademola5569',
+                username: 'yorubacinemax_admin'
             });
             console.log('Admin user seeded successfully.');
+        } else if (adminUser.name !== 'Yoruba Cinemax') {
+            // If admin exists but has the old name, update it
+            adminUser.name = 'Yoruba Cinemax';
+            saveUsers(users);
+            console.log('Admin user name updated.');
         }
     };
     seedAdminUser();
@@ -72,9 +81,13 @@ export const saveUsers = (users: User[]): void => {
     cache.users = null; // Invalidate cache
 };
 
-export const addUser = (userData: Omit<User, 'id'>): User => {
+export const addUser = (userData: Omit<User, 'id' | 'profilePic'>): User => {
     const users = getUsers();
-    const newUser: User = { ...userData, id: `user_${new Date().getTime()}` };
+    const newUser: User = { 
+        ...userData, 
+        id: `user_${new Date().getTime()}`,
+        profilePic: undefined
+    };
     saveUsers([...users, newUser]);
     return newUser;
 };
@@ -84,6 +97,23 @@ export const getUserByEmail = (email: string): User | undefined => {
 };
 export const getUserById = (id: string): User | undefined => {
     return getUsers().find(user => user.id === id);
+};
+
+export const isUsernameTaken = (username: string, excludeUserId?: string): boolean => {
+    const lowercasedUsername = username.toLowerCase();
+    return getUsers().some(user => user.id !== excludeUserId && user.username.toLowerCase() === lowercasedUsername);
+};
+
+export const updateUserProfile = (userId: string, updates: Partial<Pick<User, 'name' | 'username' | 'profilePic'>>): User | null => {
+    const users = getUsers();
+    const userIndex = users.findIndex(u => u.id === userId);
+    if (userIndex === -1) return null;
+
+    const updatedUser = { ...users[userIndex], ...updates };
+    users[userIndex] = updatedUser;
+    
+    saveUsers(users);
+    return updatedUser;
 };
 
 export const authenticateUser = (email: string, password: string): User | null => {
@@ -117,15 +147,17 @@ export const clearSession = (): void => localStorage.removeItem('YC_SESSION');
 
 
 // --- COMMENTS & UPVOTES ---
+// This function gets all comments from storage. It's designed to be global,
+// ensuring that comments from all users are fetched together, resolving the visibility issue.
 const getAllComments = (): Record<string, Comment[]> => {
-    if (cache.comments) return cache.comments;
+    // Bypassing cache for read to ensure fresh data and fix visibility bug
     const comments = getItem('YC_COMMENTS', {});
     cache.comments = comments;
     return comments;
 }
 const saveAllComments = (allComments: Record<string, Comment[]>): void => {
     setItem('YC_COMMENTS', allComments);
-    cache.comments = null; // Invalidate cache
+    cache.comments = null; // Invalidate cache after writing
 }
 
 export const getComments = (movieId: string): Comment[] => {
