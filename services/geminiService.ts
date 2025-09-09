@@ -4,15 +4,11 @@ import { Movie, User } from "./types";
 import { getViewingHistory } from "./storageService";
 
 
-// Ensure the API key is available, but do not expose it in the UI or ask the user for it.
-// It is assumed to be set in the environment.
-const API_KEY = process.env.API_KEY;
+// Use the hardcoded Gemini API key provided by the user.
+const API_KEY = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
 
-if (!API_KEY) {
-  console.warn("API_KEY environment variable not set for Gemini. AI features will be disabled.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
+// Initialize the AI client.
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const model = 'gemini-2.5-flash';
 
@@ -48,9 +44,6 @@ export interface AiChatResponse {
 }
 
 export const runChat = async (prompt: string, movies: Movie[]): Promise<AiChatResponse> => {
-  if (!API_KEY) {
-    return { text: "I'm sorry, but the AI service is currently unavailable. Please check the configuration." };
-  }
    if (!movies || movies.length === 0) {
     return { text: "I'm still loading our movie catalog. Please ask me again in a moment!" };
   }
@@ -106,7 +99,6 @@ export const runChat = async (prompt: string, movies: Movie[]): Promise<AiChatRe
 };
 
 export const findMovieByDescription = async (query: string, movies: Movie[]): Promise<Movie | null> => {
-    if (!API_KEY) return null;
     try {
         const movieContext = movies.map(m => `ID: ${m.id}, Title: ${m.title}, Description: ${m.description}, Stars: ${m.stars.join(', ')}`).join('\n');
         const systemInstruction = `You are an expert movie finder for a Yoruba movie website. Your task is to find the single best movie match from the provided list based on the user's description. Respond only with the movie's unique ID in JSON format. If no clear match is found, the ID should be null.
@@ -151,7 +143,6 @@ Example response: { "movieId": "jagun-jagun" }`;
 };
 
 export const getAiRecommendations = async (currentMovie: Movie, movies: Movie[]): Promise<{ movieId: string, reason: string }[] | null> => {
-    if (!API_KEY) return null;
     try {
         const otherMoviesContext = movies
             .filter(m => m.id !== currentMovie.id)
@@ -207,7 +198,7 @@ ${otherMoviesContext}`;
 };
 
 export const getAiPersonalizedRecommendations = async (viewingHistory: {movieId: string, viewedAt: string}[], movies: Movie[]): Promise<{ movieId: string }[] | null> => {
-    if (!API_KEY || viewingHistory.length === 0) return null;
+    if (viewingHistory.length === 0) return null;
     try {
         const historyMovies = viewingHistory.map(h => movies.find(m => m.id === h.movieId)).filter(Boolean);
         if (historyMovies.length === 0) return null;

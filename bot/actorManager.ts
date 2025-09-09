@@ -1,3 +1,6 @@
+// FIX: Declare '__dirname' to resolve TypeScript error about missing Node.js type definitions.
+declare const __dirname: string;
+
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
 import path from 'path';

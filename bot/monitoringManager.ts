@@ -1,3 +1,6 @@
+// FIX: Declare '__dirname' to resolve TypeScript error about missing Node.js type definitions.
+declare const __dirname: string;
+
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
 import path from 'path';
@@ -8,8 +11,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 const CONFIG_PATH = path.join(__dirname, './monitoringConfig.json');
 const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 
-const apiKey = process.env.API_KEY;
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const apiKey = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
+const ai = new GoogleGenAI({ apiKey });
 const model = 'gemini-2.5-flash';
 
 interface MonitoringConfig {
@@ -73,7 +76,7 @@ const simulateCheck = (): { channel: string, videoTitle: string, videoUrl: strin
 
 export const checkMonitoredChannels = async (bot: TelegramBot) => {
     const config = getMonitoringConfig();
-    if (!config.enabled || !ai) return;
+    if (!config.enabled) return;
 
     const newVideo = simulateCheck();
     if (!newVideo) {

@@ -1,3 +1,6 @@
+// FIX: Declare '__dirname' to resolve TypeScript error about missing Node.js type definitions.
+declare const __dirname: string;
+
 import TelegramBot from 'node-telegram-bot-api';
 import { GoogleGenAI, Type } from "@google/genai";
 import { getAnalyticsSummary } from './analyticsService';
@@ -10,13 +13,9 @@ import { atomicWrite } from './utils';
 const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 const ACTORS_PATH = path.join(__dirname, '../../data/actors.json');
 
-const apiKey = process.env.API_KEY;
+const apiKey = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
 
-if (!apiKey) {
-    console.warn("API_KEY for Gemini is not set. AI features will be disabled.");
-}
-
-const ai = new GoogleGenAI({ apiKey: apiKey! });
+const ai = new GoogleGenAI({ apiKey });
 const model = 'gemini-2.5-flash';
 
 const readMovies = (): Movie[] => {
@@ -38,10 +37,6 @@ const writeActors = (actors: Actor[]) => atomicWrite(ACTORS_PATH, JSON.stringify
 
 
 export const startAiChat = (bot: TelegramBot, chatId: number) => {
-    if (!apiKey) {
-        bot.sendMessage(chatId, "Sorry, the AI service is not configured. Please contact the administrator.");
-        return;
-    }
     setUserState(chatId, { command: 'ai_chat' });
     bot.sendMessage(chatId, "🤖 You are now chatting with the Analytics AI. Ask me about site activity or the movie catalog. For example:\n- 'How is the site doing today?'\n- 'What movies are similar to Anikulapo?'");
 };
@@ -50,7 +45,7 @@ export const handleAiQuery = async (bot: TelegramBot, msg: TelegramBot.Message) 
     const chatId = msg.chat.id;
     const query = msg.text;
 
-    if (!apiKey || !query) return;
+    if (!query) return;
 
     await bot.sendChatAction(chatId, 'typing');
 
@@ -88,10 +83,6 @@ ${movieContext}
 };
 
 export const suggestNewMovies = async (bot: TelegramBot, chatId: number) => {
-     if (!apiKey) {
-        bot.sendMessage(chatId, "AI service not configured.");
-        return;
-    }
     await bot.sendChatAction(chatId, 'typing');
     try {
         const currentMovies = readMovies();
@@ -115,8 +106,8 @@ export const suggestNewMovies = async (bot: TelegramBot, chatId: number) => {
 
 export const getWeeklyDigest = async (bot: TelegramBot) => {
     const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
-    if (!apiKey || !adminId) {
-        console.log("Weekly Digest skipped: No API key or Admin ID.");
+    if (!adminId) {
+        console.log("Weekly Digest skipped: No Admin ID.");
         return;
     }
     
@@ -145,7 +136,6 @@ Please generate the weekly report.`;
 };
 
 export const generateActorProfile = async (actorName: string): Promise<Partial<Actor> | null> => {
-    if (!apiKey) return null;
     try {
         const systemInstruction = `You are an AI data specialist. Find a concise one-paragraph biography and a direct URL to a high-quality, public-domain portrait image for the specified Yoruba movie actor. Use Google Search. Respond in JSON format. If no good image URL is found, the imageUrl should be null.`;
         const responseSchema = {

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../services/types';
 import * as storage from '../services/storageService';
-import { useLocation, useNavigate } from 'react-router-dom';
 
 const ADMIN_EMAIL = 'ayeyemiademola5569@gmail.com';
 
@@ -65,7 +64,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     storage.clearSession();
   };
   
-  const isAdmin = currentUser?.email.toLowerCase() === ADMIN_EMAIL;
+  const isAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL;
   const value = { currentUser, login, signup, logout, loading, isAdmin };
 
   return (

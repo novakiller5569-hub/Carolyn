@@ -1,3 +1,5 @@
+// FIX: Declare '__dirname' to resolve TypeScript error about missing Node.js type definitions.
+declare const __dirname: string;
 
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
@@ -9,8 +11,8 @@ import { GoogleGenAI } from '@google/genai';
 const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 const POSTERS_DIR = path.join(__dirname, '../../public/posters');
 
-const apiKey = process.env.API_KEY;
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const apiKey = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
+const ai = new GoogleGenAI({ apiKey });
 const model = 'gemini-2.5-flash';
 
 // Helper to read movies from the JSON file
@@ -109,10 +111,6 @@ export const handleAddMovieResponse = async (bot: TelegramBot, msg: TelegramBot.
         
         // AI Description Generation
         if (currentStep.key === 'description' && msg.text.toLowerCase() === 'ai') {
-            if (!ai) {
-                bot.sendMessage(userId, "AI service is not configured. Please enter a description manually.");
-                return;
-            }
             await bot.sendChatAction(userId, 'typing');
             try {
                 const response = await ai.models.generateContent({

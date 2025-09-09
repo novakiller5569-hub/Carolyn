@@ -1,3 +1,6 @@
+// FIX: Declare 'process' to resolve TypeScript errors about missing Node.js type definitions.
+declare const process: any;
+
 import TelegramBot from 'node-telegram-bot-api';
 import { handleStartCommand, handleCallbackQuery, handleMessage } from './commands';
 import { clearAllUserStates } from './utils';
@@ -55,7 +58,8 @@ const scheduleWeeklyDigest = () => {
 
 
 // 2. YouTube Channel Monitoring
-let monitoringInterval: NodeJS.Timeout | null = null;
+// FIX: Changed NodeJS.Timeout to 'any' to resolve TypeScript error about missing Node.js type definitions.
+let monitoringInterval: any | null = null;
 
 const setupMonitoringInterval = () => {
     if (monitoringInterval) {

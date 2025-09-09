@@ -1,3 +1,6 @@
+// FIX: The 'require' function is globally available in Node.js environments and its type is provided by @types/node.
+// The previous manual declaration was redundant and caused a "Cannot redeclare" error, so it has been removed.
+
 // This file acts as a gatekeeper to prevent the bot from running in unsupported environments.
 
 // Check 1: Ensure we are in a Node.js environment, not a browser.

@@ -60,8 +60,6 @@ const initializeData = () => {
     seedAdminUser();
 };
 
-initializeData();
-
 // --- USER MANAGEMENT ---
 export const getUsers = (): User[] => {
     if (cache.users) return cache.users;
@@ -295,3 +293,6 @@ export const addToViewingHistory = (userId: string, movieId: string): void => {
     allHistories[userId] = userHistory;
     saveHistories(allHistories);
 };
+
+// Initialize data only after all functions have been defined.
+initializeData();
