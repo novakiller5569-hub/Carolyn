@@ -1,0 +1,12 @@
+
+{
+  "enabled": true,
+  "checkIntervalMinutes": 60,
+  "autoUploadChannels": [
+    "https://www.youtube.com/c/yorubaplay",
+    "https://www.youtube.com/c/yorubahood"
+  ],
+  "notificationChannels": [
+    "https://www.youtube.com/c/apatatv"
+  ]
+}

@@ -1,0 +1,169 @@
+import TelegramBot from 'node-telegram-bot-api';
+import { GoogleGenAI, Type } from "@google/genai";
+import { getAnalyticsSummary } from './analyticsService';
+import { setUserState, getUserState, clearUserState } from './utils';
+import fs from 'fs';
+import path from 'path';
+import { Movie, Actor } from './types';
+import { atomicWrite } from './utils';
+
+const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
+const ACTORS_PATH = path.join(__dirname, '../../data/actors.json');
+
+const apiKey = process.env.API_KEY;
+
+if (!apiKey) {
+    console.warn("API_KEY for Gemini is not set. AI features will be disabled.");
+}
+
+const ai = new GoogleGenAI({ apiKey: apiKey! });
+const model = 'gemini-2.5-flash';
+
+const readMovies = (): Movie[] => {
+    try {
+        const data = fs.readFileSync(MOVIES_PATH, 'utf-8');
+        return JSON.parse(data);
+    } catch {
+        return [];
+    }
+};
+
+const readActors = (): Actor[] => {
+    try {
+        const data = fs.readFileSync(ACTORS_PATH, 'utf-8');
+        return JSON.parse(data);
+    } catch { return []; }
+};
+const writeActors = (actors: Actor[]) => atomicWrite(ACTORS_PATH, JSON.stringify(actors, null, 2));
+
+
+export const startAiChat = (bot: TelegramBot, chatId: number) => {
+    if (!apiKey) {
+        bot.sendMessage(chatId, "Sorry, the AI service is not configured. Please contact the administrator.");
+        return;
+    }
+    setUserState(chatId, { command: 'ai_chat' });
+    bot.sendMessage(chatId, "🤖 You are now chatting with the Analytics AI. Ask me about site activity or the movie catalog. For example:\n- 'How is the site doing today?'\n- 'What movies are similar to Anikulapo?'");
+};
+
+export const handleAiQuery = async (bot: TelegramBot, msg: TelegramBot.Message) => {
+    const chatId = msg.chat.id;
+    const query = msg.text;
+
+    if (!apiKey || !query) return;
+
+    await bot.sendChatAction(chatId, 'typing');
+
+    try {
+        let days = 1;
+        if (query.toLowerCase().includes('last week')) days = 7;
+        if (query.toLowerCase().includes('last month')) days = 30;
+
+        const analytics = getAnalyticsSummary(days);
+        const movies = readMovies();
+        const movieContext = movies.map(m => `Title: ${m.title}, Genre: ${m.genre}, Category: ${m.category}`).join('\n');
+        
+        const systemInstruction = `You are a helpful AI assistant for the admin of Yoruba Cinemax. Provide concise, friendly, and natural language answers.
+        
+1.  **For analytics questions:** Use the provided data to summarize website performance.
+2.  **For movie catalog questions:** (e.g., "suggest a thriller", "what's like Jagun Jagun?"), use the provided movie list. Do not mention movies outside this list.
+
+**Analytics Data for the last ${days} day(s):**
+- Visitors: ${analytics.dailyVisitors}
+- New Sign-ups: ${analytics.todaysSignups}
+- Most Popular Movies (by clicks):
+  ${analytics.mostClicked.map((m, i) => `${i + 1}. ${m.title} (${m.clicks} clicks)`).join('\n') || 'No movie clicks recorded.'}
+  
+**Available Movie Catalog:**
+${movieContext}
+`;
+        
+        const response = await ai.models.generateContent({ model, contents: query, config: { systemInstruction } });
+        bot.sendMessage(chatId, response.text);
+
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        bot.sendMessage(chatId, "Sorry, I'm having trouble thinking right now. Please try again later.");
+    }
+};
+
+export const suggestNewMovies = async (bot: TelegramBot, chatId: number) => {
+     if (!apiKey) {
+        bot.sendMessage(chatId, "AI service not configured.");
+        return;
+    }
+    await bot.sendChatAction(chatId, 'typing');
+    try {
+        const currentMovies = readMovies();
+        const existingTitles = currentMovies.map(m => m.title).join(', ');
+
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Find 3 popular or trending Yoruba movies that are NOT in this list: ${existingTitles}.`,
+            config: {
+                tools: [{ googleSearch: {} }],
+            }
+        });
+        
+        bot.sendMessage(chatId, `🧠 *AI Suggestions based on web search:*\n\n${response.text}`, { parse_mode: 'Markdown' });
+
+    } catch(e) {
+        bot.sendMessage(chatId, "Could not fetch suggestions at this time.");
+        console.error(e);
+    }
+};
+
+export const getWeeklyDigest = async (bot: TelegramBot) => {
+    const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
+    if (!apiKey || !adminId) {
+        console.log("Weekly Digest skipped: No API key or Admin ID.");
+        return;
+    }
+    
+    console.log("Generating weekly digest...");
+    await bot.sendChatAction(adminId, 'typing');
+    try {
+        const analytics = getAnalyticsSummary(7);
+        const systemInstruction = `You are an AI assistant generating a weekly performance report for the admin of a movie website. Provide a concise, friendly summary using Markdown formatting. Highlight key numbers and trends.`;
+
+        const prompt = `Here is the data for the last 7 days:
+- Total Visitors: ${analytics.dailyVisitors}
+- New Sign-ups: ${analytics.todaysSignups}
+- Top 3 Most Clicked Movies: ${analytics.mostClicked.slice(0, 3).map(m => `${m.title} (${m.clicks} clicks)`).join(', ') || 'None'}
+
+Please generate the weekly report.`;
+
+        const response = await ai.models.generateContent({ model, contents: prompt, config: { systemInstruction } });
+
+        const reportHeader = "📊 *Your Weekly Performance Report* 📊\n\n";
+        bot.sendMessage(adminId, reportHeader + response.text, { parse_mode: 'Markdown' });
+
+    } catch (e) {
+        console.error("Failed to generate weekly digest:", e);
+        bot.sendMessage(adminId, "Sorry, I couldn't generate the weekly report this time.");
+    }
+};
+
+export const generateActorProfile = async (actorName: string): Promise<Partial<Actor> | null> => {
+    if (!apiKey) return null;
+    try {
+        const systemInstruction = `You are an AI data specialist. Find a concise one-paragraph biography and a direct URL to a high-quality, public-domain portrait image for the specified Yoruba movie actor. Use Google Search. Respond in JSON format. If no good image URL is found, the imageUrl should be null.`;
+        const responseSchema = {
+            type: Type.OBJECT, properties: {
+                bio: { type: Type.STRING },
+                imageUrl: { type: Type.STRING, description: "A direct link to a JPG/PNG image file, or null." }
+            }
+        };
+
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Find bio and image URL for actor: ${actorName}`,
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
+        });
+        
+        return JSON.parse(response.text);
+    } catch (error) {
+        console.error(`AI failed to generate profile for ${actorName}:`, error);
+        return null;
+    }
+};

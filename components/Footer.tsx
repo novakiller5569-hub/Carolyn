@@ -2,8 +2,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FacebookIcon, TwitterIcon, InstagramIcon, YouTubeIcon } from './icons/Icons';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 
 const Footer: React.FC = () => {
+  const { config } = useSiteConfig();
   const quickLinks = [
     { name: 'Privacy Policy', path: '/privacy-policy' },
     { name: 'DMCA', path: '/dmca' },
@@ -23,9 +25,9 @@ const Footer: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500">Yoruba Cinemax</h3>
+            <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500">{config.name}</h3>
             <p className="text-gray-400 mt-2 text-sm">
-              Nigeria's Premier Yoruba Movie Destination. Bringing you the best of Yoruba entertainment.
+              {config.tagline}
             </p>
           </div>
           <div>
@@ -52,7 +54,7 @@ const Footer: React.FC = () => {
           </div>
         </div>
         <div className="mt-8 pt-8 border-t border-gray-800 text-center text-gray-500 text-sm">
-          <p>&copy; {new Date().getFullYear()} Yoruba Cinemax. All Rights Reserved.</p>
+          <p>&copy; {new Date().getFullYear()} {config.name}. All Rights Reserved.</p>
         </div>
       </div>
     </footer>

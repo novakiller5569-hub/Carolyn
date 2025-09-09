@@ -1,11 +1,16 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
 import Pagination from '../components/Pagination';
-import { MOVIES } from '../constants';
-import { Movie } from '../types';
-import { StarIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons/Icons';
+import { Movie } from '../services/types';
+import { StarIcon } from '../components/icons/Icons';
+import { useMovies } from '../contexts/MovieContext';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../contexts/AuthContext';
+import PersonalizedRows from '../components/PersonalizedRows';
+import MovieCarousel from '../components/MovieCarousel';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 
 const MOVIES_PER_PAGE = 10;
 
@@ -42,59 +47,62 @@ const FeaturedMovie: React.FC<{ movie: Movie }> = React.memo(({ movie }) => (
   </section>
 ));
 
-// Sub-component for the horizontal movie carousel
-const MovieCarousel: React.FC<{ title: string; movies: Movie[] }> = React.memo(({ title, movies }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const { scrollLeft, clientWidth } = scrollRef.current;
-      const scrollTo = direction === 'left' ? scrollLeft - clientWidth * 0.8 : scrollLeft + clientWidth * 0.8;
-      scrollRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
-    }
-  };
-
-  return (
-    <section className="mb-12">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-3xl font-bold text-white">{title}</h2>
-        <div className="space-x-2">
-          <button onClick={() => scroll('left')} className="p-2 bg-gray-800/50 rounded-full hover:bg-green-600 transition-colors"><ChevronLeftIcon/></button>
-          <button onClick={() => scroll('right')} className="p-2 bg-gray-800/50 rounded-full hover:bg-green-600 transition-colors"><ChevronRightIcon/></button>
-        </div>
-      </div>
-      <div ref={scrollRef} className="flex space-x-4 md:space-x-6 overflow-x-auto pb-4 no-scrollbar">
-        {movies.map((movie, index) => (
-          <div key={movie.id} className="flex-shrink-0 w-40 sm:w-48 md:w-56">
-            <MovieCard movie={movie} animationDelay={`${index * 75}ms`} />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-});
-
 
 const HomePage: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [filters, setFilters] = useState({
-    category: 'All',
-    year: 'All',
-    sort: 'newest',
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { movies, loading, error } = useMovies();
+  const { currentUser } = useAuth();
+  const { config } = useSiteConfig();
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    const pageParam = searchParams.get('page');
+    return pageParam ? parseInt(pageParam, 10) : 1;
   });
+
+  const [filters, setFilters] = useState(() => ({
+    category: searchParams.get('category') || 'All',
+    year: searchParams.get('year') || 'All',
+    sort: searchParams.get('sort') || 'newest',
+  }));
+
   const isInitialMount = useRef(true);
 
-  const featuredMovie = useMemo(() => [...MOVIES].sort((a, b) => b.popularity - a.popularity)[0], []);
-  const trendingMovies = useMemo(() => [...MOVIES].sort((a, b) => b.popularity - a.popularity).slice(0, 8), []);
+  const featuredMovie = useMemo(() => {
+      if (!movies || movies.length === 0) return null;
+      // Prioritize the featured movie from site config
+      if (config.featuredMovieId) {
+          const fm = movies.find(m => m.id === config.featuredMovieId);
+          if (fm) return fm;
+      }
+      // Fallback to the most popular movie
+      return [...movies].sort((a, b) => b.popularity - a.popularity)[0];
+  }, [movies, config.featuredMovieId]);
+  
+  const trendingMovies = useMemo(() => {
+    if (!movies || movies.length === 0) return [];
+    return [...movies].sort((a, b) => b.popularity - a.popularity).slice(0, 10);
+  }, [movies]);
+
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (currentPage > 1) params.set('page', String(currentPage));
+    if (filters.category !== 'All') params.set('category', filters.category);
+    if (filters.year !== 'All') params.set('year', filters.year);
+    if (filters.sort !== 'newest') params.set('sort', filters.sort);
+    
+    // Use replace to not clutter browser history on filter/page changes
+    setSearchParams(params, { replace: true });
+  }, [currentPage, filters, setSearchParams]);
 
   useEffect(() => {
     if (isInitialMount.current) {
         isInitialMount.current = false;
-    } else {
-        const section = document.getElementById('explore-movies-section');
-        if (section) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        return;
+    }
+    const section = document.getElementById('explore-movies-section');
+    if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [currentPage]);
 
@@ -105,7 +113,8 @@ const HomePage: React.FC = () => {
   };
 
   const filteredAndSortedMovies = useMemo(() => {
-    let filtered = MOVIES.filter(movie => {
+    if (!movies) return [];
+    let filtered = movies.filter(movie => {
       const categoryMatch = filters.category === 'All' || movie.category === filters.category;
       const yearMatch = filters.year === 'All' || new Date(movie.releaseDate).getFullYear().toString() === filters.year;
       return categoryMatch && yearMatch;
@@ -126,7 +135,7 @@ const HomePage: React.FC = () => {
         break;
     }
     return filtered;
-  }, [filters]);
+  }, [filters, movies]);
 
   const totalPages = Math.ceil(filteredAndSortedMovies.length / MOVIES_PER_PAGE);
   const currentMovies = filteredAndSortedMovies.slice(
@@ -134,8 +143,8 @@ const HomePage: React.FC = () => {
     currentPage * MOVIES_PER_PAGE
   );
 
-  const categories = ['All', ...Array.from(new Set(MOVIES.map(m => m.category)))];
-  const years = ['All', ...Array.from(new Set(MOVIES.map(m => new Date(m.releaseDate).getFullYear()))).sort((a,b) => b-a).map(String)];
+  const categories = useMemo(() => ['All', ...Array.from(new Set(movies.map(m => m.category)))], [movies]);
+  const years = useMemo(() => ['All', ...Array.from(new Set(movies.map(m => new Date(m.releaseDate).getFullYear()))).sort((a,b) => b-a).map(String)], [movies]);
   
   const FilterSelect: React.FC<{name: string, label: string, value: string, options: string[], onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void}> = ({name, label, value, options, onChange}) => (
     <div>
@@ -152,10 +161,20 @@ const HomePage: React.FC = () => {
     </div>
   );
 
+  if (loading) {
+    return <div className="flex justify-center items-center h-full py-20"><LoadingSpinner text="Loading movies..." /></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-20 text-red-400">Error: {error}</div>;
+  }
 
   return (
     <div>
-      <FeaturedMovie movie={featuredMovie} />
+      {featuredMovie && <FeaturedMovie movie={featuredMovie} />}
+      
+      {currentUser && <PersonalizedRows />}
+
       <MovieCarousel title="Trending Now" movies={trendingMovies} />
 
       <section id="explore-movies-section" className="mt-12">

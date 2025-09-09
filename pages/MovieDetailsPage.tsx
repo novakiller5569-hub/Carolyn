@@ -1,82 +1,78 @@
-
-import React, { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
-import { MOVIES } from '../constants';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
-import { StarIcon, UserIcon, ReplyIcon, ChevronDownIcon, ChevronUpIcon, BotIcon, SparklesIcon } from '../components/icons/Icons';
+import { StarIcon, UserIcon, ReplyIcon, ChevronDownIcon, ChevronUpIcon, BotIcon, SparklesIcon, ThumbsUpIcon, BookmarkIcon, FacebookIcon, TwitterIcon, ChevronLeftIcon, ChevronRightIcon, XIcon } from '../components/icons/Icons';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { Comment, Movie } from '../types';
+import { Comment, Movie } from '../services/types';
 import { getAiRecommendations } from '../services/geminiService';
 import BackButton from '../components/BackButton';
+import { useMovies } from '../contexts/MovieContext';
+import { useAuth } from '../contexts/AuthContext';
+import * as storage from '../services/storageService';
 
-const USERNAME_KEY = 'yorubaCinemaxUsername';
 
-// Sub-component for the form to add comments/replies
+// --- SOCIAL SHARE COMPONENT ---
+const SocialShare: React.FC<{ movie: Movie }> = ({ movie }) => {
+    const url = window.location.href;
+    const text = `Check out "${movie.title}" on Yoruba Cinemax!`;
+    
+    const platforms = {
+        twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+        facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+    };
+
+    return (
+        <div className="flex items-center gap-3 mt-6">
+            <span className="text-sm font-semibold text-gray-300">Share:</span>
+            <a href={platforms.twitter} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-blue-400 transition-colors" aria-label="Share on Twitter">
+                <TwitterIcon className="w-4 h-4" />
+            </a>
+            <a href={platforms.facebook} target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 rounded-full hover:bg-blue-600 transition-colors" aria-label="Share on Facebook">
+                <FacebookIcon className="w-4 h-4" />
+            </a>
+        </div>
+    );
+};
+
+
+// --- COMMENT FORM COMPONENT ---
 const CommentForm: React.FC<{
+  movieId: string;
   parentId?: string | null;
-  onSubmit: (comment: Comment) => void;
+  onCommentAdded: () => void;
   onCancel?: () => void;
   submitLabel?: string;
-}> = ({ parentId = null, onSubmit, onCancel, submitLabel = "Submit" }) => {
-    const [username, setUsername] = useState<string | null>(localStorage.getItem(USERNAME_KEY));
-    const [tempUsername, setTempUsername] = useState('');
+}> = ({ movieId, parentId = null, onCommentAdded, onCancel, submitLabel = "Submit" }) => {
+    const { currentUser } = useAuth();
     const [commentText, setCommentText] = useState('');
     const [rating, setRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
 
-    const handleNameSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (tempUsername.trim()) {
-            localStorage.setItem(USERNAME_KEY, tempUsername.trim());
-            setUsername(tempUsername.trim());
-        }
-    }
-
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!commentText.trim() || !username) return;
+        if (!commentText.trim() || !currentUser) return;
 
-        const newComment: Comment = {
-            id: new Date().toISOString(),
+        const newComment: Omit<Comment, 'id' | 'replies'> = {
             parentId,
-            reviewer: username,
+            reviewer: currentUser.name,
+            userId: currentUser.id,
             comment: commentText.trim(),
-            date: new Date().toISOString().split('T')[0],
-            replies: [],
+            date: new Date().toISOString(),
             rating: parentId === null && rating > 0 ? rating : undefined,
         };
-        onSubmit(newComment);
+        storage.addComment(movieId, newComment);
+        onCommentAdded();
         setCommentText('');
         setRating(0);
-        if (onCancel) {
-            onCancel();
-        }
+        if (onCancel) onCancel();
     };
-
-    if (!username) {
-        return (
-            <form onSubmit={handleNameSubmit} className="flex items-center gap-2 p-4 bg-gray-800 rounded-lg border border-gray-700 my-4">
-                <UserIcon className="w-6 h-6 text-gray-400" />
-                <input
-                    type="text"
-                    value={tempUsername}
-                    onChange={(e) => setTempUsername(e.target.value)}
-                    placeholder="Enter your name to comment"
-                    className="flex-grow bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-                <button type="submit" className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-500 transition-colors">
-                    Save Name
-                </button>
-            </form>
-        )
-    }
 
     return (
         <form onSubmit={handleSubmit} className="space-y-3">
             <textarea
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
-                placeholder={parentId ? `Replying as ${username}...` : `Commenting as ${username}...`}
+                placeholder={parentId ? `Replying as ${currentUser?.name}...` : `Commenting as ${currentUser?.name}...`}
                 rows={3}
                 className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                 required
@@ -93,6 +89,7 @@ const CommentForm: React.FC<{
                                 onMouseEnter={() => setHoverRating(star)}
                                 onMouseLeave={() => setHoverRating(0)}
                                 className="text-2xl"
+                                aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
                             >
                                 <StarIcon
                                     className={`w-6 h-6 transition-colors ${
@@ -118,18 +115,40 @@ const CommentForm: React.FC<{
     );
 };
 
-
-// Sub-component for a single comment item
+// --- COMMENT ITEM COMPONENT ---
 const CommentItem: React.FC<{
+  movieId: string;
   comment: Comment;
-  onReply: (reply: Comment) => void;
-}> = ({ comment, onReply }) => {
+  onCommentChange: () => void;
+}> = ({ movieId, comment, onCommentChange }) => {
     const [showReplyForm, setShowReplyForm] = useState(false);
     const [showReplies, setShowReplies] = useState(true);
+    const { currentUser, isAdmin } = useAuth();
+    
+    // Check if the author of this comment is the admin
+    const commentUser = useMemo(() => storage.getUserById(comment.userId), [comment.userId]);
+    const isOwner = commentUser?.email === 'ayeyemiademola5569@gmail.com';
 
-    const handleReplySubmit = (reply: Comment) => {
-        onReply(reply);
-        setShowReplyForm(false);
+    const [upvoteCount, setUpvoteCount] = useState(() => storage.getUpvotes(comment.id).length);
+    const [hasUpvoted, setHasUpvoted] = useState(() => 
+        currentUser ? storage.getUpvotes(comment.id).includes(currentUser.id) : false
+    );
+
+    const handleUpvote = () => {
+        if (currentUser) {
+            setHasUpvoted(prev => !prev);
+            setUpvoteCount(prev => hasUpvoted ? prev - 1 : prev + 1);
+            storage.toggleUpvote(comment.id, currentUser.id);
+        } else {
+            alert("Please log in to upvote comments.");
+        }
+    };
+    
+    const handleDeleteComment = () => {
+        if (window.confirm("Are you sure you want to delete this comment and all its replies?")) {
+            storage.deleteComment(movieId, comment.id);
+            onCommentChange(); // Refresh the comment list
+        }
     };
 
     return (
@@ -141,7 +160,10 @@ const CommentItem: React.FC<{
                 <div className="flex-1">
                     <div className="bg-gray-800 rounded-lg p-3 border border-gray-700/50">
                         <div className="flex items-center justify-between">
-                            <p className="font-bold text-white">{comment.reviewer}</p>
+                            <p className="font-bold text-white flex items-center gap-2">
+                                {comment.reviewer}
+                                {isOwner && <span className="text-xs font-bold text-gray-900 bg-yellow-400 px-2 py-0.5 rounded-full shadow">Owner</span>}
+                            </p>
                             <span className="text-xs text-gray-500">{new Date(comment.date).toLocaleDateString()}</span>
                         </div>
                         {comment.rating && (
@@ -154,9 +176,19 @@ const CommentItem: React.FC<{
                         <p className={`text-gray-300 mt-1 whitespace-pre-wrap ${comment.isAI ? 'italic' : ''}`}>{comment.comment}</p>
                     </div>
                     <div className="mt-1 flex items-center space-x-4">
-                        <button onClick={() => setShowReplyForm(!showReplyForm)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-400 transition-colors">
-                            <ReplyIcon className="w-3 h-3"/> Reply
+                        {currentUser && (
+                            <button onClick={() => setShowReplyForm(!showReplyForm)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-400 transition-colors">
+                                <ReplyIcon className="w-3 h-3"/> Reply
+                            </button>
+                        )}
+                        <button onClick={handleUpvote} className={`flex items-center gap-1 text-xs transition-colors ${hasUpvoted ? 'text-green-400 font-bold' : 'text-gray-400 hover:text-green-400'}`}>
+                            <ThumbsUpIcon className="w-3 h-3"/> {upvoteCount}
                         </button>
+                        {isAdmin && (
+                             <button onClick={handleDeleteComment} className="flex items-center gap-1 text-xs text-red-500 hover:text-red-400 transition-colors">
+                                <XIcon className="w-3 h-3"/> Delete
+                             </button>
+                        )}
                         {comment.replies.length > 0 && (
                              <button onClick={() => setShowReplies(!showReplies)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
                                 {showReplies ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}
@@ -169,8 +201,12 @@ const CommentItem: React.FC<{
             {showReplyForm && (
                 <div className="ml-12 mt-2">
                     <CommentForm
+                        movieId={movieId}
                         parentId={comment.id}
-                        onSubmit={handleReplySubmit}
+                        onCommentAdded={() => {
+                            onCommentChange();
+                            setShowReplyForm(false);
+                        }}
                         onCancel={() => setShowReplyForm(false)}
                         submitLabel="Post Reply"
                     />
@@ -179,7 +215,7 @@ const CommentItem: React.FC<{
             {showReplies && comment.replies.length > 0 && (
                 <div className="border-l-2 border-gray-700 ml-5 pl-1">
                     {comment.replies.map(reply => (
-                        <CommentItem key={reply.id} comment={reply} onReply={onReply} />
+                        <CommentItem key={reply.id} movieId={movieId} comment={reply} onCommentChange={onCommentChange} />
                     ))}
                 </div>
             )}
@@ -188,109 +224,142 @@ const CommentItem: React.FC<{
 };
 
 
-// Sub-component to manage the entire comments section
-const CommentsSection: React.FC<{ initialComments: Comment[], movieId: string }> = ({ initialComments, movieId }) => {
-    const [commentsList, setCommentsList] = useState(initialComments);
+// --- COMMENTS SECTION COMPONENT ---
+const CommentsSection: React.FC<{ movie: Movie }> = ({ movie }) => {
+    const [comments, setComments] = useState<Comment[]>([]);
+    const { currentUser } = useAuth();
+    const navigate = useNavigate();
+
+    const fetchComments = useCallback(() => {
+        const movieComments = storage.getComments(movie.id);
+        const nestedComments = storage.nestComments(movieComments);
+        setComments(nestedComments);
+    }, [movie.id]);
 
     useEffect(() => {
-        setCommentsList(initialComments);
-    }, [initialComments]);
+        fetchComments();
+    }, [fetchComments]);
 
-    const handleNewComment = (comment: Comment) => {
-        setCommentsList(prev => [...prev, comment]);
-    };
-
-    const handleNewReply = (reply: Comment) => {
-        const addReply = (comments: Comment[]): Comment[] => {
-            return comments.map(c => {
-                if (c.id === reply.parentId) {
-                    return { ...c, replies: [...c.replies, reply] };
-                }
-                if (c.replies.length > 0) {
-                    return { ...c, replies: addReply(c.replies) };
-                }
-                return c;
-            });
-        };
-        setCommentsList(prev => addReply(prev));
-    };
-
-    const topLevelComments = useMemo(() => {
-        const commentMap = new Map<string, Comment>();
-        const rootComments: Comment[] = [];
-
-        commentsList.forEach(c => {
-            c.replies = c.replies || []; // Ensure replies array exists
-            commentMap.set(c.id, c);
-        });
-
-        commentsList.forEach(c => {
-            if (c.parentId && commentMap.has(c.parentId)) {
-                const parent = commentMap.get(c.parentId)!;
-                if (!parent.replies.some(r => r.id === c.id)) { // Prevent duplicates
-                   parent.replies.push(c);
-                }
-            } else {
-                rootComments.push(c);
-            }
-        });
-        
-        return rootComments.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [commentsList]);
 
     return (
         <section className="mt-12">
             <h2 className="text-3xl font-bold text-white mb-6">Reviews & Comments</h2>
             <div className="mb-8">
-                <CommentForm onSubmit={handleNewComment} />
+                {currentUser ? (
+                    <CommentForm movieId={movie.id} onCommentAdded={fetchComments} />
+                ) : (
+                    <div className="text-center p-6 bg-gray-800 border border-gray-700 rounded-lg">
+                        <p className="text-gray-300">You must be logged in to leave a comment.</p>
+                        <div className="mt-4">
+                            <Link to="/login" state={{ from: window.location.hash.substring(1) }} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors">
+                                Login or Sign Up
+                            </Link>
+                        </div>
+                    </div>
+                )}
             </div>
             <div>
-                {topLevelComments.length > 0 ? (
-                    topLevelComments.map(comment => (
-                        <CommentItem key={comment.id} comment={comment} onReply={handleNewReply} />
+                {comments.length > 0 ? (
+                    comments.map(comment => (
+                        <CommentItem key={comment.id} movieId={movie.id} comment={comment} onCommentChange={fetchComments} />
                     ))
                 ) : (
-                    <p className="text-gray-500">Be the first to leave a comment!</p>
+                    <p className="text-gray-500 text-center py-4">Be the first to leave a comment!</p>
                 )}
             </div>
         </section>
     );
 };
 
-// Main component for the movie details page
+// --- AI RECOMMENDATIONS COMPONENT ---
+const AiRecommendations: React.FC<{
+  recs: { movie: Movie, reason: string }[];
+}> = ({ recs }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      const { scrollLeft, clientWidth } = scrollRef.current;
+      const scrollTo = direction === 'left' ? scrollLeft - clientWidth * 0.8 : scrollLeft + clientWidth * 0.8;
+      scrollRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <section className="mt-12">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-3xl font-bold text-white flex items-center gap-2">
+            <SparklesIcon className="text-green-400"/>
+            AI Recommendations
+        </h2>
+        <div className="space-x-2">
+            <button onClick={() => scroll('left')} className="p-2 bg-gray-800/50 rounded-full hover:bg-green-600 transition-colors" aria-label="Scroll left"><ChevronLeftIcon/></button>
+            <button onClick={() => scroll('right')} className="p-2 bg-gray-800/50 rounded-full hover:bg-green-600 transition-colors" aria-label="Scroll right"><ChevronRightIcon/></button>
+        </div>
+      </div>
+      <div ref={scrollRef} className="flex space-x-4 md:space-x-6 overflow-x-auto pb-4 no-scrollbar">
+        {recs.map(({ movie: recMovie, reason }, index) => (
+          <div key={recMovie.id} className="flex-shrink-0 w-40 sm:w-48 md:w-56 animate-fade-in" style={{ animationDelay: `${index * 75}ms` }}>
+            <div className="bg-gray-800/50 p-2 rounded-lg flex flex-col h-full border border-gray-700/50">
+              <MovieCard movie={recMovie} />
+              <p className="text-xs text-gray-400 mt-2 p-1 italic flex-grow">"{reason}"</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+
+// --- MAIN MOVIE DETAILS PAGE COMPONENT ---
 const MovieDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { movies, loading, error } = useMovies();
+  const { currentUser } = useAuth();
   const [aiRecs, setAiRecs] = useState<{ movie: Movie, reason: string }[] | null>(null);
   const [isLoadingRecs, setIsLoadingRecs] = useState(true);
 
-  const movie = useMemo(() => MOVIES.find((m) => m.id === id), [id]);
+  const movie = useMemo(() => movies.find((m) => m.id === id), [id, movies]);
+
+  const [inWatchlist, setInWatchlist] = useState(currentUser && movie ? storage.isInWatchlist(currentUser.id, movie.id) : false);
+
+  useEffect(() => {
+    if (currentUser && movie) {
+      setInWatchlist(storage.isInWatchlist(currentUser.id, movie.id));
+    }
+  }, [currentUser, movie]);
+  
+  const handleWatchlistToggle = () => {
+    if (currentUser && movie) {
+      storage.toggleWatchlist(currentUser.id, movie.id);
+      setInWatchlist(!inWatchlist);
+    } else {
+      alert('Please log in to manage your watchlist.');
+    }
+  };
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    if (currentUser && id) {
+        storage.addToViewingHistory(currentUser.id, id);
+    }
+  }, [id, currentUser]);
 
+  useEffect(() => {
     const fetchRecommendations = async () => {
-        if (movie) {
-            const cacheKey = `ai-recs-${movie.id}`;
-            const cachedRecs = sessionStorage.getItem(cacheKey);
-
-            if (cachedRecs) {
-                setAiRecs(JSON.parse(cachedRecs));
-                setIsLoadingRecs(false);
-                return;
-            }
-
+        if (movie && movies.length > 1) {
             setIsLoadingRecs(true);
             try {
-                const recsData = await getAiRecommendations(movie);
+                const recsData = await getAiRecommendations(movie, movies);
                 if (recsData) {
                     const recommendedMovies = recsData
                         .map(rec => ({
-                            movie: MOVIES.find(m => m.id === rec.movieId),
+                            movie: movies.find(m => m.id === rec.movieId),
                             reason: rec.reason
                         }))
                         .filter(item => item.movie) as { movie: Movie, reason: string }[];
                     setAiRecs(recommendedMovies);
-                    sessionStorage.setItem(cacheKey, JSON.stringify(recommendedMovies));
                 }
             } catch (error) {
                 console.error("Failed to fetch AI recommendations:", error);
@@ -298,10 +367,20 @@ const MovieDetailsPage: React.FC = () => {
             } finally {
                 setIsLoadingRecs(false);
             }
+        } else {
+            setIsLoadingRecs(false);
         }
     };
     fetchRecommendations();
-  }, [movie]);
+  }, [movie, movies]);
+
+  if (loading) {
+    return <div className="flex justify-center items-center h-full py-20"><LoadingSpinner text="Loading movie details..." /></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-20 text-red-400">Error: {error}</div>;
+  }
 
   if (!movie) {
     return (
@@ -313,7 +392,7 @@ const MovieDetailsPage: React.FC = () => {
     );
   }
 
-  const relatedMovies = MOVIES.filter(m => m.category === movie.category && m.id !== movie.id).slice(0, 5);
+  const relatedMovies = movies.filter(m => m.category === movie.category && m.id !== movie.id).slice(0, 5);
 
   return (
     <div>
@@ -338,15 +417,35 @@ const MovieDetailsPage: React.FC = () => {
                 </div>
                 <p className="text-gray-300 leading-relaxed mb-6">{movie.description}</p>
                 <div className="space-y-2 text-sm">
-                    <p><strong className="text-gray-200">Starring:</strong> {movie.stars.join(', ')}</p>
+                    <p><strong className="text-gray-200">Starring:</strong> {movie.stars.map((star, index) => (
+                        <React.Fragment key={star}>
+                            <Link to={`/actor/${encodeURIComponent(star)}`} className="hover:text-green-400 hover:underline">{star}</Link>
+                            {index < movie.stars.length - 1 && ', '}
+                        </React.Fragment>
+                    ))}</p>
                     <p><strong className="text-gray-200">Genre:</strong> {movie.genre}</p>
                 </div>
-                <a
-                    href={movie.downloadLink}
-                    className="mt-8 inline-block w-full text-center sm:w-auto bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-10 rounded-full text-lg shadow-lg hover:shadow-green-500/40 transition-all duration-300 transform hover:scale-105"
-                >
-                    Download Movie
-                </a>
+                <div className="flex flex-wrap items-center gap-4 mt-8">
+                    {movie.status === 'coming-soon' ? (
+                        <div className="inline-block w-full text-center sm:w-auto bg-gray-700 text-white font-bold py-3 px-10 rounded-full text-lg">
+                            Coming Soon
+                        </div>
+                    ) : (
+                        <Link
+                            to="/youtube-downloader"
+                            className="inline-block w-full text-center sm:w-auto bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-10 rounded-full text-lg shadow-lg hover:shadow-green-500/40 transition-all duration-300 transform hover:scale-105"
+                        >
+                            Download Movie
+                        </Link>
+                    )}
+                    {currentUser && (
+                         <button onClick={handleWatchlistToggle} className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 transform hover:scale-105 ${inWatchlist ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-900'}`}>
+                            <BookmarkIcon className="w-5 h-5"/>
+                            {inWatchlist ? 'On Watchlist' : 'Add to Watchlist'}
+                        </button>
+                    )}
+                </div>
+                <SocialShare movie={movie} />
             </div>
         </section>
 
@@ -369,23 +468,10 @@ const MovieDetailsPage: React.FC = () => {
         {isLoadingRecs ? (
             <div className="mt-12"><LoadingSpinner text="Getting AI Recommendations..." /></div>
         ) : aiRecs && aiRecs.length > 0 && (
-             <section className="mt-12">
-                <h2 className="text-3xl font-bold text-white mb-4 flex items-center gap-2">
-                    <SparklesIcon className="text-green-400"/>
-                    AI Recommendations
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {aiRecs.map(({ movie: recMovie, reason }) => (
-                       <div key={recMovie.id} className="bg-gray-800/50 p-3 rounded-lg flex flex-col">
-                           <MovieCard movie={recMovie} />
-                           <p className="text-sm text-gray-400 mt-3 p-2 italic border-l-2 border-green-500 bg-gray-800 rounded-r-md flex-grow">"{reason}"</p>
-                       </div>
-                    ))}
-                </div>
-            </section>
+            <AiRecommendations recs={aiRecs} />
         )}
 
-        <CommentsSection initialComments={movie.comments || []} movieId={movie.id} />
+        <CommentsSection movie={movie} />
 
         {relatedMovies.length > 0 && (
             <section className="mt-12">

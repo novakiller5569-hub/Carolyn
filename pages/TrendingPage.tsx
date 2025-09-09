@@ -1,17 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
 import Pagination from '../components/Pagination';
-import { MOVIES } from '../constants';
 import BackButton from '../components/BackButton';
+import { useMovies } from '../contexts/MovieContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const MOVIES_PER_PAGE = 10;
 
 const TrendingPage: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { movies, loading, error } = useMovies();
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    const pageParam = searchParams.get('page');
+    return pageParam ? parseInt(pageParam, 10) : 1;
+  });
   const pageContentRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
 
   // The movies are sorted by popularity to establish the trend ranking
-  const trendingMovies = [...MOVIES].sort((a, b) => b.popularity - a.popularity);
+  const trendingMovies = useMemo(() => {
+    if (!movies) return [];
+    return [...movies].sort((a, b) => b.popularity - a.popularity)
+  }, [movies]);
 
   const totalPages = Math.ceil(trendingMovies.length / MOVIES_PER_PAGE);
   const currentMovies = trendingMovies.slice(
@@ -20,22 +33,39 @@ const TrendingPage: React.FC = () => {
   );
 
   useEffect(() => {
+    const params = new URLSearchParams();
+    if (currentPage > 1) {
+      params.set('page', String(currentPage));
+    }
+    setSearchParams(params, { replace: true });
+  }, [currentPage, setSearchParams]);
+
+  useEffect(() => {
     // Scroll to top of content when page changes, but not on initial load
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
     if (pageContentRef.current) {
       const headerOffset = 80; // Approximate height of the sticky header
       const elementPosition = pageContentRef.current.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
       
-      // Only scroll if the content is not already in view
-      if (elementPosition < headerOffset) {
-         window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
-         });
-      }
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
     }
   }, [currentPage]);
 
+  if (loading) {
+    return <div className="flex justify-center items-center h-full py-20"><LoadingSpinner text="Loading trending movies..." /></div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-20 text-red-400">Error: {error}</div>;
+  }
 
   return (
     <div>

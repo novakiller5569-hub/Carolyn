@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Movie } from '../types';
-import { MOVIES } from '../constants';
+import { Movie } from '../services/types';
 import { SearchIcon } from './icons/Icons';
 import { findMovieByDescription } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
+import { useMovies } from '../contexts/MovieContext';
 
 interface SearchBarProps {
   onSearch: () => void;
@@ -19,6 +19,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch }) => {
   const navigate = useNavigate();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<number | null>(null);
+  const { movies } = useMovies();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -36,10 +37,10 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch }) => {
         clearTimeout(searchTimeoutRef.current);
     }
     
-    if (query.length > 2) {
+    if (query.length > 2 && movies.length > 0) {
       setIsAiSearching(false); // Reset AI search state on new query
       const lowercasedQuery = query.toLowerCase();
-      const filteredMovies = MOVIES.filter(movie =>
+      const filteredMovies = movies.filter(movie =>
         movie.title.toLowerCase().includes(lowercasedQuery) ||
         movie.genre.toLowerCase().includes(lowercasedQuery) ||
         movie.stars.some(star => star.toLowerCase().includes(lowercasedQuery))
@@ -50,7 +51,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch }) => {
       if (filteredMovies.length === 0 && query.trim().split(' ').length >= 3) {
         searchTimeoutRef.current = window.setTimeout(() => {
           setIsAiSearching(true);
-          findMovieByDescription(query).then(foundMovie => {
+          findMovieByDescription(query, movies).then(foundMovie => {
               if (foundMovie) {
                   setResults([foundMovie]);
               }
@@ -69,7 +70,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch }) => {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [query]);
+  }, [query, movies]);
 
   const handleSelectMovie = (movieId: string) => {
     setQuery('');

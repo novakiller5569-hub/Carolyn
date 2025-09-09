@@ -2,24 +2,37 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { runChat } from '../services/geminiService';
-import { ChatMessage } from '../types';
-import { BotIcon, SendIcon, XIcon, ChevronDownIcon } from './icons/Icons';
+import { ChatMessage } from '../services/types';
+import { BotIcon, SendIcon, XIcon, ChevronDownIcon, GlobeIcon } from './icons/Icons';
 import LoadingSpinner from './LoadingSpinner';
+import { useMovies } from '../contexts/MovieContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const AiChatPopup: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { sender: 'ai', text: "Hello! I'm your Yoruba Cinemax assistant. Ask me for movie recommendations or anything about our films." }
-  ]);
+  const { currentUser } = useAuth();
+  
+  const getInitialMessage = () => {
+      const welcomeText = currentUser ? `Hello ${currentUser.name}!` : "Hello!";
+      return { sender: 'ai' as const, text: `${welcomeText} I'm your Yoruba Cinemax assistant. Ask me for movie recommendations or anything about our films.` };
+  };
+
+  const [messages, setMessages] = useState<ChatMessage[]>([getInitialMessage()]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { movies } = useMovies();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(scrollToBottom, [messages]);
+  
+  useEffect(() => {
+    // Reset message history if user logs in/out while chat is open
+    setMessages([getInitialMessage()]);
+  }, [currentUser]);
 
   const handleSendMessage = async () => {
     if (userInput.trim() === '' || isLoading) return;
@@ -29,8 +42,8 @@ const AiChatPopup: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const aiResponse = await runChat(userInput);
-      const aiMessage: ChatMessage = { sender: 'ai', text: aiResponse.text, movie: aiResponse.movie };
+      const aiResponse = await runChat(userInput, movies);
+      const aiMessage: ChatMessage = { sender: 'ai', text: aiResponse.text, movie: aiResponse.movie, sources: aiResponse.sources };
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error("Gemini API error:", error);
@@ -93,6 +106,28 @@ const AiChatPopup: React.FC = () => {
                   </div>
                 </Link>
               )}
+               {msg.sources && msg.sources.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-600">
+                  <h4 className="text-xs font-semibold text-gray-400 mb-1 flex items-center gap-1.5">
+                    <GlobeIcon />
+                    Sources from the web:
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {msg.sources.map((source, i) => (
+                      <a
+                        key={i}
+                        href={source.uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 px-2 py-1 rounded-full transition-colors truncate max-w-[200px]"
+                        title={source.title}
+                      >
+                        {source.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -126,6 +161,7 @@ const AiChatPopup: React.FC = () => {
             onClick={handleSendMessage}
             className="absolute right-1 top-1/2 -translate-y-1/2 bg-green-600 p-2 rounded-full hover:bg-green-500 transition-colors disabled:opacity-50"
             disabled={isLoading}
+            aria-label="Send message"
           >
             <SendIcon />
           </button>

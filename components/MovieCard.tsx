@@ -1,8 +1,11 @@
 
-import React from 'react';
+import React, { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Movie } from '../types';
-import { StarIcon } from './icons/Icons';
+import { Movie } from '../services/types';
+import { StarIcon, BookmarkIcon } from './icons/Icons';
+import { useAuth } from '../contexts/AuthContext';
+import { toggleWatchlist, isInWatchlist } from '../services/storageService';
+
 
 interface MovieCardProps {
   movie: Movie;
@@ -10,6 +13,25 @@ interface MovieCardProps {
 }
 
 const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
+  const { currentUser } = useAuth();
+  const [inWatchlist, setInWatchlist] = React.useState(currentUser ? isInWatchlist(currentUser.id, movie.id) : false);
+
+  React.useEffect(() => {
+    setInWatchlist(currentUser ? isInWatchlist(currentUser.id, movie.id) : false);
+  }, [currentUser, movie.id]);
+
+  const handleWatchlistToggle = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentUser) {
+      toggleWatchlist(currentUser.id, movie.id);
+      setInWatchlist(!inWatchlist);
+    } else {
+      // Maybe navigate to login or show a toast
+      alert('Please log in to add movies to your watchlist.');
+    }
+  };
+
   const style = animationDelay ? { animationDelay } : {};
   return (
     <Link 
@@ -26,6 +48,20 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
             loading="lazy"
           />
         </div>
+        {currentUser && (
+          <button
+            onClick={handleWatchlistToggle}
+            className={`absolute top-2 left-2 p-1.5 rounded-full transition-colors duration-200 z-10 ${
+              inWatchlist 
+                ? 'bg-green-500 text-white' 
+                : 'bg-black/60 backdrop-blur-sm text-gray-200 hover:bg-green-600 hover:text-white'
+            }`}
+            aria-label={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+            title={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            <BookmarkIcon className="w-4 h-4" />
+          </button>
+        )}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded-full text-xs font-bold flex items-center space-x-1">
           <StarIcon className="w-3 h-3 text-yellow-400" />
           <span>{movie.rating.toFixed(1)}</span>
