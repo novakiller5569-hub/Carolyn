@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { MOVIES } from '../constants';
@@ -269,6 +270,15 @@ const MovieDetailsPage: React.FC = () => {
 
     const fetchRecommendations = async () => {
         if (movie) {
+            const cacheKey = `ai-recs-${movie.id}`;
+            const cachedRecs = sessionStorage.getItem(cacheKey);
+
+            if (cachedRecs) {
+                setAiRecs(JSON.parse(cachedRecs));
+                setIsLoadingRecs(false);
+                return;
+            }
+
             setIsLoadingRecs(true);
             try {
                 const recsData = await getAiRecommendations(movie);
@@ -280,6 +290,7 @@ const MovieDetailsPage: React.FC = () => {
                         }))
                         .filter(item => item.movie) as { movie: Movie, reason: string }[];
                     setAiRecs(recommendedMovies);
+                    sessionStorage.setItem(cacheKey, JSON.stringify(recommendedMovies));
                 }
             } catch (error) {
                 console.error("Failed to fetch AI recommendations:", error);

@@ -126,6 +126,7 @@ Example response: { "movieId": "jagun-jagun" }`;
                 systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema,
+                thinkingConfig: { thinkingBudget: 0 },
             }
         });
 
@@ -185,6 +186,7 @@ ${otherMoviesContext}`;
                 systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema,
+                thinkingConfig: { thinkingBudget: 0 },
             }
         });
 

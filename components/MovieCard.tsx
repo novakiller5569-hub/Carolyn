@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Movie } from '../types';
@@ -42,4 +43,4 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
   );
 };
 
-export default MovieCard;
+export default React.memo(MovieCard);

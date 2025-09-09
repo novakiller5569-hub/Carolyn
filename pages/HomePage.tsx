@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
@@ -9,7 +10,7 @@ import { StarIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons
 const MOVIES_PER_PAGE = 10;
 
 // Sub-component for the hero banner
-const FeaturedMovie: React.FC<{ movie: Movie }> = ({ movie }) => (
+const FeaturedMovie: React.FC<{ movie: Movie }> = React.memo(({ movie }) => (
   <section className="relative h-[60vh] md:h-[70vh] rounded-2xl overflow-hidden mb-12 animate-fade-in">
     <img src={movie.poster} alt={movie.title} className="absolute inset-0 w-full h-full object-cover object-center blur-sm scale-110" />
     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/70 to-transparent"></div>
@@ -39,10 +40,10 @@ const FeaturedMovie: React.FC<{ movie: Movie }> = ({ movie }) => (
       </div>
     </div>
   </section>
-);
+));
 
 // Sub-component for the horizontal movie carousel
-const MovieCarousel: React.FC<{ title: string; movies: Movie[] }> = ({ title, movies }) => {
+const MovieCarousel: React.FC<{ title: string; movies: Movie[] }> = React.memo(({ title, movies }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scroll = (direction: 'left' | 'right') => {
@@ -71,7 +72,7 @@ const MovieCarousel: React.FC<{ title: string; movies: Movie[] }> = ({ title, mo
       </div>
     </section>
   );
-};
+});
 
 
 const HomePage: React.FC = () => {
