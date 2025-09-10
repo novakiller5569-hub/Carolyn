@@ -197,41 +197,71 @@ const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mes
         await bot.sendChatAction(userId, 'typing');
 
         try {
-            const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract or infer the following details and respond in a single, valid JSON object: "title" (clean title without 'Full Movie' etc.), "description" (a compelling 30-40 word summary you generate by searching the web for the movie), "stars" (an array of top 3 actors), "genre" (a single primary genre), "category" ('Drama', 'Comedy', 'Action', 'Romance', 'Thriller', or 'Epic'), "posterUrl" (a direct URL to a high-quality poster image found via web search). The releaseDate should be today's date in YYYY-MM-DD format.`;
+            const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract the following details for the specific Yoruba movie in the video and respond in a single, valid JSON object:
+- "title": The clean, official movie title. Do not include extra text like "Full Movie", "Official Trailer", etc.
+- "description": A compelling 30-40 word summary you generate by searching the web for the movie's plot.
+- "stars": An array of the top 3-4 main actors.
+- "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
+- "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
+- "posterUrl": A direct, publicly accessible link to a high-quality JPG or PNG image file for the movie's poster. Do NOT provide a URL to a webpage. If a valid direct image link cannot be found, set this value to null.
+- "releaseDate": Today's date in YYYY-MM-DD format.`;
             const responseSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
+                type: Type.OBJECT, properties: {
+                    title: { type: Type.STRING }, description: { type: Type.STRING },
                     stars: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    genre: { type: Type.STRING },
-                    category: { type: Type.STRING },
-                    releaseDate: { type: Type.STRING },
-                    posterUrl: { type: Type.STRING }
+                    genre: { type: Type.STRING }, category: { type: Type.STRING },
+                    releaseDate: { type: Type.STRING }, posterUrl: { type: Type.STRING }
                 },
                 required: ['title', 'description', 'stars', 'genre', 'category', 'posterUrl', 'releaseDate']
             };
 
             const response = await ai.models.generateContent({
-                model,
-                contents: `Extract full movie details for this YouTube video: ${url}`,
+                model, contents: `Extract full movie details for this YouTube video: ${url}`,
                 config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
             });
 
             const details = JSON.parse(response.text);
             Object.assign(state.movieData, details);
-            state.command = 'add_movie_youtube_poster';
-            setUserState(userId, state);
-            bot.sendMessage(userId, `🤖 AI has gathered the details!\n\nHere is the poster it found:\n${details.posterUrl}\n\nPlease download this image and send it to me now to finalize the upload.`);
+
+            // Attempt to download the poster automatically
+            const posterPath = await downloadImage(details.posterUrl, details.title);
+
+            if (posterPath) {
+                // SUCCESS: Poster downloaded, finish adding the movie
+                state.movieData.poster = posterPath;
+                const movies = readMovies();
+                if (movies.find(m => m.title.toLowerCase() === state.movieData.title.toLowerCase())) {
+                    bot.sendMessage(userId, `❌ Error! A movie titled "${state.movieData.title}" already exists.`);
+                    clearUserState(userId);
+                    return;
+                }
+                const newMovie: Movie = {
+                    id: state.movieData.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
+                    title: state.movieData.title, poster: state.movieData.poster,
+                    downloadLink: state.movieData.downloadLink, genre: state.movieData.genre,
+                    category: state.movieData.category, releaseDate: state.movieData.releaseDate,
+                    stars: state.movieData.stars, runtime: "N/A", rating: 7.0,
+                    description: state.movieData.description, popularity: 75,
+                    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                };
+                writeMovies([...movies, newMovie]);
+                bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added automatically from YouTube.`);
+                clearUserState(userId);
+            } else {
+                // FAILURE: Poster download failed, ask user to provide one
+                state.command = 'add_movie_youtube_poster_manual';
+                setUserState(userId, state);
+                bot.sendMessage(userId, `🤖 AI has gathered details for "${details.title}", but could not download a valid poster. Please send a poster image manually to finish adding the movie.`);
+            }
 
         } catch (e) {
             console.error(e);
             bot.sendMessage(userId, "❌ The AI failed to process this URL. Please try a different one or add the movie manually.");
             clearUserState(userId);
         }
-    } else if (state.command === 'add_movie_youtube_poster') {
+    } else if (state.command === 'add_movie_youtube_poster_manual') {
         if (!msg.photo) {
-            bot.sendMessage(userId, "That's not an image. Please send the poster image you downloaded.");
+            bot.sendMessage(userId, "That's not an image. Please send the poster image.");
             return;
         }
         try {
@@ -248,22 +278,15 @@ const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mes
 
             const newMovie: Movie = {
                 id: state.movieData.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
-                title: state.movieData.title,
-                poster: state.movieData.poster,
-                downloadLink: state.movieData.downloadLink,
-                genre: state.movieData.genre,
-                category: state.movieData.category,
-                releaseDate: state.movieData.releaseDate,
-                stars: state.movieData.stars,
-                runtime: "N/A",
-                rating: 7.0, // Default rating
-                description: state.movieData.description,
-                popularity: 75, // Default popularity
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
+                title: state.movieData.title, poster: state.movieData.poster,
+                downloadLink: state.movieData.downloadLink, genre: state.movieData.genre,
+                category: state.movieData.category, releaseDate: state.movieData.releaseDate,
+                stars: state.movieData.stars, runtime: "N/A", rating: 7.0,
+                description: state.movieData.description, popularity: 75,
+                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
             };
             writeMovies([...movies, newMovie]);
-            bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added from YouTube.\n\nView it on the site: \`#/movie/${newMovie.id}\``, { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added from YouTube with your provided poster.`);
             clearUserState(userId);
 
         } catch (error) {
@@ -296,60 +319,70 @@ async function savePoster(bot: TelegramBot, msg: TelegramBot.Message, title: str
 
 // --- AUTONOMOUS MOVIE CREATION ---
 
-async function downloadImage(url: string, title: string): Promise<string> {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    if (!fs.existsSync(POSTERS_DIR)) {
-        fs.mkdirSync(POSTERS_DIR, { recursive: true });
+async function downloadImage(url: string | null, title: string): Promise<string | null> {
+    if (!url || !url.startsWith('http')) {
+        console.log(`Skipping download: Invalid or null URL provided for ${title}.`);
+        return null;
     }
 
-    const movieId = title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30);
-    // Try to get a file extension from the URL
-    const pathname = new URL(url).pathname;
-    const extension = path.extname(pathname) || '.jpg';
-    const posterFileName = `${movieId}-${Date.now()}${extension}`;
-    const posterPath = path.join(POSTERS_DIR, posterFileName);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.startsWith('image/')) {
+            throw new Error(`URL is not a direct image link. Content-Type: ${contentType}`);
+        }
 
-    fs.writeFileSync(posterPath, buffer);
-    
-    return `/posters/${posterFileName}`;
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        if (!fs.existsSync(POSTERS_DIR)) {
+            fs.mkdirSync(POSTERS_DIR, { recursive: true });
+        }
+
+        const movieId = title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30);
+        const pathname = new URL(url).pathname;
+        const extension = path.extname(pathname) || '.jpg';
+        const posterFileName = `${movieId}-${Date.now()}${extension}`;
+        const posterPath = path.join(POSTERS_DIR, posterFileName);
+
+        fs.writeFileSync(posterPath, buffer);
+        
+        return `/posters/${posterFileName}`;
+    } catch (error) {
+        console.error(`Error downloading image for "${title}" from ${url}:`, error);
+        return null;
+    }
 }
 
 export const createMovieFromYouTube = async (youtubeUrl: string): Promise<Movie | null> => {
     try {
-        const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract or infer the following details and respond in a single, valid JSON object:
-- "title": The clean, official movie title.
+        const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract the following details for the specific Yoruba movie in the video and respond in a single, valid JSON object:
+- "title": The clean, official movie title. Do not include extra text like "Full Movie", "Official Trailer", etc.
 - "description": A compelling 30-40 word summary you generate by searching the web for the movie's plot.
 - "stars": An array of the top 3-4 main actors.
 - "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
 - "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
-- "posterUrl": A direct URL to a high-quality movie poster image (JPG or PNG) found via web search. This is crucial.
+- "posterUrl": A direct, publicly accessible link to a high-quality JPG or PNG image file for the movie's poster. Do NOT provide a URL to a webpage. If a valid direct image link cannot be found, set this value to null.
 - "releaseDate": The movie's release year or full date (YYYY-MM-DD). If unknown, use today's date.
 - "runtime": The approximate runtime (e.g., "2h 15m"). If unknown, use "N/A".`;
         
         const responseSchema = {
-            type: Type.OBJECT,
-            properties: {
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
+            type: Type.OBJECT, properties: {
+                title: { type: Type.STRING }, description: { type: Type.STRING },
                 stars: { type: Type.ARRAY, items: { type: Type.STRING } },
-                genre: { type: Type.STRING },
-                category: { type: Type.STRING },
-                releaseDate: { type: Type.STRING },
-                posterUrl: { type: Type.STRING },
+                genre: { type: Type.STRING }, category: { type: Type.STRING },
+                releaseDate: { type: Type.STRING }, posterUrl: { type: Type.STRING },
                 runtime: { type: Type.STRING },
             },
             required: ['title', 'description', 'stars', 'genre', 'category', 'posterUrl', 'releaseDate', 'runtime']
         };
 
         const response = await ai.models.generateContent({
-            model,
-            contents: `Extract full movie details for this YouTube video: ${youtubeUrl}`,
+            model, contents: `Extract full movie details for this YouTube video: ${youtubeUrl}`,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
         });
 
@@ -358,21 +391,20 @@ export const createMovieFromYouTube = async (youtubeUrl: string): Promise<Movie 
         // Download the poster
         const posterLocalPath = await downloadImage(details.posterUrl, details.title);
         
+        if (!posterLocalPath) {
+            console.log(`Autonomous Finder: Could not download poster for "${details.title}". Aborting movie creation.`);
+            return null; // Indicate failure due to poster
+        }
+        
         const newMovie: Movie = {
             id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30) + `-${Date.now().toString().slice(-4)}`, // Add timestamp to avoid collisions
-            title: details.title,
-            poster: posterLocalPath,
-            downloadLink: youtubeUrl,
-            genre: details.genre,
-            category: details.category,
-            releaseDate: details.releaseDate,
-            stars: details.stars,
-            runtime: details.runtime,
+            title: details.title, poster: posterLocalPath, downloadLink: youtubeUrl,
+            genre: details.genre, category: details.category, releaseDate: details.releaseDate,
+            stars: details.stars, runtime: details.runtime,
             rating: 7.0 + parseFloat((Math.random() * 2).toFixed(1)), // Assign a plausible random rating
             description: details.description,
             popularity: 70 + Math.floor(Math.random() * 15), // Assign plausible popularity
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
         };
 
         return newMovie;

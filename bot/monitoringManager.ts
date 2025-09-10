@@ -83,7 +83,7 @@ export const runAutonomousFinder = async (bot: TelegramBot) => {
         const newMovie = await createMovieFromYouTube(newVideoUrl);
 
         if (!newMovie) {
-            bot.sendMessage(adminId, `❌ AI processing failed for the movie above. Please try adding it manually if desired.`);
+            bot.sendMessage(adminId, `❌ AI processing failed for the movie above. This is likely because a valid poster could not be automatically downloaded. Please try adding it manually if desired.`);
             return;
         }
 
