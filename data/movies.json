@@ -15,7 +15,9 @@
     "popularity": 95,
     "createdAt": "2022-09-01T10:00:00Z",
     "updatedAt": "2022-09-30T12:00:00Z",
-    "trailerId": "dkl_a2W50_A"
+    "trailerId": "dkl_a2W50_A",
+    "seriesTitle": "Aníkúlápó",
+    "partNumber": 1
   },
   {
     "id": "king-of-thieves",
@@ -32,7 +34,9 @@
     "popularity": 92,
     "createdAt": "2022-03-15T10:00:00Z",
     "updatedAt": "2022-04-08T12:00:00Z",
-    "trailerId": "i_F4vj0yL7o"
+    "trailerId": "i_F4vj0yL7o",
+    "seriesTitle": "King of Thieves (Ogundabede)",
+    "partNumber": 1
   },
   {
     "id": "jagun-jagun",
@@ -49,7 +53,9 @@
     "popularity": 98,
     "createdAt": "2023-07-20T10:00:00Z",
     "updatedAt": "2023-08-10T12:00:00Z",
-    "trailerId": "g340A9_2n-c"
+    "trailerId": "g340A9_2n-c",
+    "seriesTitle": "Jagun Jagun (The Warrior)",
+    "partNumber": 1
   },
   {
     "id": "ile-owo",
@@ -65,7 +71,9 @@
     "description": "A young woman from a poor background finds love with a wealthy man, but his family harbors a dark and terrifying secret.",
     "popularity": 80,
     "createdAt": "2022-06-01T10:00:00Z",
-    "updatedAt": "2022-06-24T12:00:00Z"
+    "updatedAt": "2022-06-24T12:00:00Z",
+    "seriesTitle": "Ilé Owo (House of Money)",
+    "partNumber": 1
   },
   {
     "id": "omo-ghetto",
@@ -82,7 +90,9 @@
     "popularity": 88,
     "createdAt": "2020-12-01T10:00:00Z",
     "updatedAt": "2020-12-25T12:00:00Z",
-    "trailerId": "kS-J6aGvRcs"
+    "trailerId": "kS-J6aGvRcs",
+    "seriesTitle": "Omo Ghetto: The Saga",
+    "partNumber": 1
   },
   {
     "id": "sugar-rush",
@@ -98,7 +108,9 @@
     "description": "Three sisters discover a huge sum of money and must go on the run from dangerous criminals and the authorities.",
     "popularity": 85,
     "createdAt": "2019-12-01T10:00:00Z",
-    "updatedAt": "2019-12-25T12:00:00Z"
+    "updatedAt": "2019-12-25T12:00:00Z",
+    "seriesTitle": "Sugar Rush",
+    "partNumber": 1
   },
   {
     "id": "ayanmo",
@@ -114,7 +126,9 @@
     "description": "A biopic on the life of Ayinla Omowura, a popular Apala musician, exploring his rise to fame, his music, and his tragic death.",
     "popularity": 89,
     "createdAt": "2021-06-01T10:00:00Z",
-    "updatedAt": "2021-06-18T12:00:00Z"
+    "updatedAt": "2021-06-18T12:00:00Z",
+    "seriesTitle": "Ayinla",
+    "partNumber": 1
   },
   {
     "id": "mokalik",
@@ -130,7 +144,9 @@
     "description": "An 11-year-old boy from the suburbs spends a day as an apprentice at a mechanic workshop to understand life from a different perspective.",
     "popularity": 75,
     "createdAt": "2019-05-01T10:00:00Z",
-    "updatedAt": "2019-05-31T12:00:00Z"
+    "updatedAt": "2019-05-31T12:00:00Z",
+    "seriesTitle": "Mokalik (Mechanic)",
+    "partNumber": 1
   },
    {
     "id": "breaded-life",
@@ -146,7 +162,9 @@
     "description": "A spoiled rich kid wakes up one day to find that no one in his family recognizes him, forcing him to learn how to survive on the streets.",
     "popularity": 83,
     "createdAt": "2021-04-01T10:00:00Z",
-    "updatedAt": "2021-04-16T12:00:00Z"
+    "updatedAt": "2021-04-16T12:00:00Z",
+    "seriesTitle": "Breaded Life",
+    "partNumber": 1
   },
   {
     "id": "the-wedding-party",
@@ -162,7 +180,9 @@
     "description": "The lavish wedding of a Yoruba bride and an Igbo groom turns into a chaotic and hilarious series of events as their families clash.",
     "popularity": 90,
     "createdAt": "2016-12-01T10:00:00Z",
-    "updatedAt": "2016-12-16T12:00:00Z"
+    "updatedAt": "2016-12-16T12:00:00Z",
+    "seriesTitle": "The Wedding Party",
+    "partNumber": 1
   },
   {
     "id": "gold-statue",
@@ -178,7 +198,9 @@
     "description": "Two young men go on a perilous adventure in search of a mythical gold statue, a journey that tests their wits and friendship.",
     "popularity": 77,
     "createdAt": "2019-05-01T10:00:00Z",
-    "updatedAt": "2019-05-17T12:00:00Z"
+    "updatedAt": "2019-05-17T12:00:00Z",
+    "seriesTitle": "Gold Statue",
+    "partNumber": 1
   },
   {
     "id": "elevator-baby",
@@ -194,7 +216,9 @@
     "description": "A privileged young man and a struggling pregnant woman are trapped in an elevator, forcing them to rely on each other as she goes into labor.",
     "popularity": 81,
     "createdAt": "2019-10-01T10:00:00Z",
-    "updatedAt": "2019-10-11T12:00:00Z"
+    "updatedAt": "2019-10-11T12:00:00Z",
+    "seriesTitle": "Elevator Baby",
+    "partNumber": 1
   },
   {
     "id": "citation",
@@ -210,7 +234,9 @@
     "description": "A bright student takes on the academic establishment when she reports a popular professor who tried to sexually assault her.",
     "popularity": 84,
     "createdAt": "2020-10-15T10:00:00Z",
-    "updatedAt": "2020-11-06T12:00:00Z"
+    "updatedAt": "2020-11-06T12:00:00Z",
+    "seriesTitle": "Citation",
+    "partNumber": 1
   },
   {
     "id": "gangs-of-lagos",
@@ -226,7 +252,9 @@
     "description": "A group of friends navigate the dangerous and politically charged streets of Isale Eko, Lagos, rising through the criminal underworld.",
     "popularity": 93,
     "createdAt": "2023-03-15T10:00:00Z",
-    "updatedAt": "2023-04-07T12:00:00Z"
+    "updatedAt": "2023-04-07T12:00:00Z",
+    "seriesTitle": "Gangs of Lagos",
+    "partNumber": 1
   },
   {
     "id": "ijogbon",
@@ -242,6 +270,46 @@
     "rating": 7.9,
     "popularity": 87,
     "createdAt": "2023-10-01T10:00:00Z",
-    "updatedAt": "2023-10-13T12:00:00Z"
+    "updatedAt": "2023-10-13T12:00:00Z",
+    "seriesTitle": "Ijogbon",
+    "partNumber": 1
+  },
+  {
+    "id": "koleoso",
+    "title": "Koleoso",
+    "poster": "https://picsum.photos/seed/koleoso1/300/400",
+    "downloadLink": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "genre": "Drama",
+    "category": "Drama",
+    "releaseDate": "2024-01-15",
+    "stars": ["Odunlade Adekola", "Mercy Aigbe", "Fathia Balogun"],
+    "runtime": "1h 35m",
+    "rating": 8.1,
+    "description": "A powerful and respected community leader faces a crisis that threatens to unravel his family and everything he has built.",
+    "popularity": 86,
+    "createdAt": "2024-01-10T10:00:00Z",
+    "updatedAt": "2024-01-15T12:00:00Z",
+    "trailerId": "dQw4w9WgXcQ",
+    "seriesTitle": "Koleoso",
+    "partNumber": 1
+  },
+  {
+    "id": "koleoso-part-2",
+    "title": "Koleoso Part 2",
+    "poster": "https://picsum.photos/seed/koleoso2/300/400",
+    "downloadLink": "https://www.youtube.com/watch?v=oHg5SJYRHA0",
+    "genre": "Drama",
+    "category": "Drama",
+    "releaseDate": "2024-01-22",
+    "stars": ["Odunlade Adekola", "Mercy Aigbe", "Fathia Balogun"],
+    "runtime": "1h 42m",
+    "rating": 8.3,
+    "description": "The continuation of Koleoso's story, as the fallout from his crisis deepens and new enemies emerge from the shadows.",
+    "popularity": 88,
+    "createdAt": "2024-01-18T10:00:00Z",
+    "updatedAt": "2024-01-22T12:00:00Z",
+    "trailerId": "oHg5SJYRHA0",
+    "seriesTitle": "Koleoso",
+    "partNumber": 2
   }
 ]

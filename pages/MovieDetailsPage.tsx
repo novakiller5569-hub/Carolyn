@@ -342,6 +342,13 @@ const MovieDetailsPage: React.FC = () => {
 
   const movie = useMemo(() => movies.find((m) => m.id === id), [id, movies]);
 
+  const movieParts = useMemo(() => {
+    if (!movie?.seriesTitle) return [];
+    return movies
+        .filter(m => m.seriesTitle === movie.seriesTitle)
+        .sort((a, b) => (a.partNumber || 1) - (b.partNumber || 1));
+  }, [movie, movies]);
+
   const [inWatchlist, setInWatchlist] = useState(currentUser && movie ? storage.isInWatchlist(currentUser.id, movie.id) : false);
 
   useEffect(() => {
@@ -416,10 +423,10 @@ const MovieDetailsPage: React.FC = () => {
   }
 
   const relatedMovies = movies.filter(m => m.category === movie.category && m.id !== movie.id).slice(0, 5);
-  const isYouTubeLink = movie.downloadLink && (movie.downloadLink.includes('youtube.com') || movie.downloadLink.includes('youtu.be'));
-
+  
   const DownloadButton = () => {
     const commonClasses = "inline-block w-full text-center sm:w-auto bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-10 rounded-full text-lg shadow-lg hover:shadow-green-500/40 transition-all duration-300 transform hover:scale-105";
+    const isYouTubeLink = movie.downloadLink && (movie.downloadLink.includes('youtube.com') || movie.downloadLink.includes('youtu.be'));
 
     if (movie.status === 'coming-soon') {
       return (
@@ -496,6 +503,44 @@ const MovieDetailsPage: React.FC = () => {
                 <SocialShare movie={movie} />
             </div>
         </section>
+
+        {movieParts.length > 1 && (
+            <section className="mt-8 pt-8 border-t border-gray-800">
+                <h3 className="text-2xl font-bold text-white mb-4">{movie.seriesTitle} Series</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                    {movieParts.map(part => {
+                        const isYouTubeLink = part.downloadLink && (part.downloadLink.includes('youtube.com') || part.downloadLink.includes('youtu.be'));
+                        const isCurrent = part.id === movie.id;
+
+                        if (isCurrent) {
+                            return (
+                                <span key={part.id} className="bg-gray-700 text-white font-bold py-2 px-5 rounded-full cursor-not-allowed">
+                                    Part {part.partNumber} (Viewing)
+                                </span>
+                            );
+                        }
+
+                        if (isYouTubeLink) {
+                            return (
+                                <Link
+                                    key={part.id}
+                                    to={`/youtube-downloader?url=${encodeURIComponent(part.downloadLink)}`}
+                                    className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-5 rounded-full transition-colors"
+                                >
+                                    Part {part.partNumber}
+                                </Link>
+                            );
+                        }
+                        
+                        return (
+                            <span key={part.id} className="bg-gray-600 text-gray-400 font-bold py-2 px-5 rounded-full cursor-not-allowed" title="This part does not have a direct video link.">
+                                Part {part.partNumber}
+                            </span>
+                        );
+                    })}
+                </div>
+            </section>
+        )}
 
         {movie.trailerId && (
             <section className="mt-12">

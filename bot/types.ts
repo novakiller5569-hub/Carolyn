@@ -19,6 +19,8 @@ export interface Movie {
   updatedAt: string;
   trailerId?: string;
   status?: 'coming-soon';
+  seriesTitle?: string;
+  partNumber?: number;
 }
 
 export interface SiteConfig {

@@ -67,6 +67,11 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
           <span>{movie.rating.toFixed(1)}</span>
         </div>
          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/0 to-black/0 opacity-100 group-hover:opacity-100 transition-opacity duration-300"></div>
+          {movie.partNumber && movie.partNumber > 1 && (
+            <span className="absolute bottom-2 right-2 bg-blue-600 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">
+                Part {movie.partNumber}
+            </span>
+          )}
       </div>
       <div className="p-3">
         <h3 className="text-sm font-semibold text-white truncate group-hover:text-green-400 transition-colors duration-300">{movie.title}</h3>

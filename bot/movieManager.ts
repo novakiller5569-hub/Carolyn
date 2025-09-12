@@ -177,7 +177,9 @@ const handleManualMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mess
             trailerId: state.movieData.trailerId,
             popularity: 70, 
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            seriesTitle: state.movieData.title, // Assume manual adds are part 1
+            partNumber: 1
         };
         writeMovies([...movies, newMovie]);
         bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added.`);
@@ -242,7 +244,7 @@ const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mes
             return;
         }
         const videoDetails = videoDetailsArr[0];
-        const { title, description } = videoDetails.snippet;
+        const { title, description, publishedAt } = videoDetails.snippet;
         const durationMinutes = parseDuration(videoDetails.contentDetails.duration);
         
         if (durationMinutes < 15) {
@@ -260,20 +262,24 @@ const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mes
 
         try {
             const systemInstruction = `You are an AI data enrichment tool. Given a movie's YouTube title and description, clean the data and find details from the web. Respond in a single, valid JSON object with the following fields:
-- "title": The clean, official movie title. Remove extra text like "Full Movie", "Official Trailer", year tags, etc.
+- "title": The clean, official movie title. Include the part number if present (e.g., "Jagun Jagun Part 2").
+- "seriesTitle": The name of the series. For "Jagun Jagun Part 2", this would be "Jagun Jagun". If it's not a series, this should be the same as the title.
+- "partNumber": The part number as an integer (e.g., 2). If it's the first or only part, this must be 1.
 - "description": A compelling 30-40 word summary based on the provided description and web search.
 - "stars": An array of the top 3-4 main actors.
 - "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
-- "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
-- "releaseDate": Today's date in YYYY-MM-DD format.`;
+- "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.`;
             const responseSchema = {
                 type: Type.OBJECT, properties: {
-                    title: { type: Type.STRING }, description: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    seriesTitle: { type: Type.STRING },
+                    partNumber: { type: Type.NUMBER },
+                    description: { type: Type.STRING },
                     stars: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    genre: { type: Type.STRING }, category: { type: Type.STRING },
-                    releaseDate: { type: Type.STRING }
+                    genre: { type: Type.STRING },
+                    category: { type: Type.STRING }
                 },
-                required: ['title', 'description', 'stars', 'genre', 'category', 'releaseDate']
+                required: ['title', 'seriesTitle', 'partNumber', 'description', 'stars', 'genre', 'category']
             };
 
             const response = await ai.models.generateContent({
@@ -296,10 +302,12 @@ const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mes
                 id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
                 title: details.title, poster: posterPath,
                 downloadLink: url, genre: details.genre,
-                category: details.category, releaseDate: details.releaseDate,
+                category: details.category, releaseDate: publishedAt,
                 stars: details.stars, runtime: `${durationMinutes}m`, rating: 7.0,
                 description: details.description, popularity: 75,
-                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+                seriesTitle: details.seriesTitle,
+                partNumber: details.partNumber
             };
             writeMovies([...movies, newMovie]);
             bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added automatically from YouTube.`);
@@ -364,7 +372,7 @@ async function downloadImage(url: string, title: string): Promise<string | null>
 
 export const createMovieFromYouTube = async (videoDetails: any): Promise<Movie | null> => {
     try {
-        const { title, description, thumbnails } = videoDetails.snippet;
+        const { title, description, thumbnails, publishedAt } = videoDetails.snippet;
         const durationMinutes = parseDuration(videoDetails.contentDetails.duration);
         const thumbnailUrl = getBestThumbnail(thumbnails);
 
@@ -374,21 +382,25 @@ export const createMovieFromYouTube = async (videoDetails: any): Promise<Movie |
         }
 
         const systemInstruction = `You are an AI data enrichment tool. Given a movie's YouTube title and description, clean the data and find details from the web. Respond in a single, valid JSON object with the following fields:
-- "title": The clean, official movie title. Remove extra text like "Full Movie", "Official Trailer", year tags, etc.
+- "title": The clean, official movie title. Include the part number if present (e.g., "Jagun Jagun Part 2").
+- "seriesTitle": The name of the series. For "Jagun Jagun Part 2", this would be "Jagun Jagun". If it's not a series, this should be the same as the title.
+- "partNumber": The part number as an integer (e.g., 2). If it's the first or only part, this must be 1.
 - "description": A compelling 30-40 word summary based on the provided description and web search.
 - "stars": An array of the top 3-4 main actors.
 - "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
-- "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
-- "releaseDate": The movie's release year or full date (YYYY-MM-DD). If unknown, use today's date.`;
+- "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.`;
         
         const responseSchema = {
             type: Type.OBJECT, properties: {
-                title: { type: Type.STRING }, description: { type: Type.STRING },
+                title: { type: Type.STRING },
+                seriesTitle: { type: Type.STRING },
+                partNumber: { type: Type.NUMBER },
+                description: { type: Type.STRING },
                 stars: { type: Type.ARRAY, items: { type: Type.STRING } },
-                genre: { type: Type.STRING }, category: { type: Type.STRING },
-                releaseDate: { type: Type.STRING }
+                genre: { type: Type.STRING },
+                category: { type: Type.STRING }
             },
-            required: ['title', 'description', 'stars', 'genre', 'category', 'releaseDate']
+            required: ['title', 'seriesTitle', 'partNumber', 'description', 'stars', 'genre', 'category']
         };
 
         const response = await ai.models.generateContent({
@@ -404,12 +416,14 @@ export const createMovieFromYouTube = async (videoDetails: any): Promise<Movie |
             id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30) + `-${Date.now().toString().slice(-4)}`,
             title: details.title, poster: posterLocalPath,
             downloadLink: `https://www.youtube.com/watch?v=${videoDetails.id}`,
-            genre: details.genre, category: details.category, releaseDate: details.releaseDate,
+            genre: details.genre, category: details.category, releaseDate: publishedAt,
             stars: details.stars, runtime: `${durationMinutes}m`,
             rating: 7.0 + parseFloat((Math.random() * 2).toFixed(1)),
             description: details.description,
             popularity: 70 + Math.floor(Math.random() * 15),
-            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            seriesTitle: details.seriesTitle,
+            partNumber: details.partNumber,
         };
         return newMovie;
 
