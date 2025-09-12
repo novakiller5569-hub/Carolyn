@@ -173,38 +173,3 @@ export const generateActorProfile = async (actorName: string): Promise<Partial<A
         return null;
     }
 };
-
-
-export const findNewTrendingMovie = async (existingMovieTitles: string[]): Promise<string | null> => {
-    try {
-        const systemInstruction = `You are a movie scout. Your goal is to find ONE new, popular, full-length Yoruba movie on YouTube that was released between 2022 and 2025.
-- The movie must NOT be in the provided list of existing movie titles.
-- It must be a FULL MOVIE, not a trailer, clip, or review.
-- Prioritize movies from the current year.
-- Use Google Search to find what's trending.
-- If you find a suitable movie, respond with ONLY its YouTube URL and nothing else.
-- If you cannot find a new movie that meets the criteria, respond with the word "null".`;
-        
-        const prompt = `Here are the movies we already have. Find a new one that is NOT on this list:\n\n${existingMovieTitles.join('\n')}`;
-
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                systemInstruction,
-                tools: [{ googleSearch: {} }],
-                temperature: 0.8,
-            }
-        });
-
-        const text = response.text.trim();
-        if (text.toLowerCase() === 'null' || !text.startsWith('https://')) {
-            return null;
-        }
-        return text;
-
-    } catch (error) {
-        console.error("AI failed to find a new trending movie:", error);
-        return null;
-    }
-};

@@ -70,9 +70,18 @@ const HomePage: React.FC = () => {
 
   const featuredMovie = useMemo(() => {
     if (!movies || movies.length === 0) return null;
-    // Always show the newest movie based on the createdAt date.
+    
+    // Prioritize the featured movie from the site config
+    if (config.featuredMovieId) {
+        const movieFromConfig = movies.find(m => m.id === config.featuredMovieId);
+        if (movieFromConfig) {
+            return movieFromConfig;
+        }
+    }
+    
+    // Fallback to the newest movie if no featured movie is set or found
     return [...movies].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-  }, [movies]);
+  }, [movies, config.featuredMovieId]);
   
   const trendingMovies = useMemo(() => {
     if (!movies || movies.length === 0) return [];

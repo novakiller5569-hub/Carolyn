@@ -2,17 +2,9 @@
 {
   "autonomousFinder": {
     "enabled": true,
-    "checkIntervalMinutes": 2
-  },
-  "channelMonitor": {
-    "enabled": false,
     "checkIntervalMinutes": 60,
-    "autoUploadChannels": [
-      "https://www.youtube.com/c/yorubaplay",
-      "https://www.youtube.com/c/yorubahood"
-    ],
-    "notificationChannels": [
-      "https://www.youtube.com/c/apatatv"
+    "channelUrls": [
+      "https://youtube.com/@itelediconstudio"
     ]
   }
 }

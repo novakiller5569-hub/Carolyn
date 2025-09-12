@@ -5,11 +5,13 @@ import BackButton from '../components/BackButton';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { LinkIcon, DownloadIcon } from '../components/icons/Icons';
 
-const MOCKED_VIDEO_DETAILS = {
-  thumbnail: 'https://picsum.photos/seed/youtube-downloader/480/270',
-  title: 'Jagun Jagun (The Warrior) | Official Trailer',
-  channel: 'Yoruba Cinemax',
-};
+const YOUTUBE_API_KEY = 'AIzaSyAPpw-HEzuGxm9vSTfWvWN5xE1P-Htcic4';
+
+interface VideoDetails {
+  thumbnail: string;
+  title: string;
+  channel: string;
+}
 
 const DOWNLOAD_OPTIONS = [
   { quality: '1080p', format: 'MP4', type: 'Full HD', size: '150.MB' },
@@ -24,21 +26,54 @@ const YouTubeDownloaderPage: React.FC = () => {
 
   const [url, setUrl] = useState(urlFromQuery || '');
   const [isLoading, setIsLoading] = useState(false);
-  const [videoDetails, setVideoDetails] = useState<typeof MOCKED_VIDEO_DETAILS | null>(null);
+  const [videoDetails, setVideoDetails] = useState<VideoDetails | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleVideoFetch = (videoUrl: string) => {
+  const extractVideoId = (url: string): string | null => {
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+  };
+
+  const handleVideoFetch = async (videoUrl: string) => {
     if (!videoUrl.trim()) return;
+
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) {
+      setError('Invalid YouTube URL. Please check the link and try again.');
+      setVideoDetails(null);
+      return;
+    }
 
     setIsLoading(true);
     setVideoDetails(null);
+    setError(null);
 
-    // Simulate API call
-    setTimeout(() => {
-      setVideoDetails(MOCKED_VIDEO_DETAILS);
+    try {
+      const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YOUTUBE_API_KEY}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Failed to fetch video details.');
+      }
+      const data = await response.json();
+      if (!data.items || data.items.length === 0) {
+        throw new Error('Video not found. It may be private, deleted, or the URL is incorrect.');
+      }
+
+      const snippet = data.items[0].snippet;
+      setVideoDetails({
+        thumbnail: snippet.thumbnails.high?.url || snippet.thumbnails.standard?.url || snippet.thumbnails.default.url,
+        title: snippet.title,
+        channel: snippet.channelTitle,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      console.error(err);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
-  
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleVideoFetch(url);
@@ -49,6 +84,7 @@ const YouTubeDownloaderPage: React.FC = () => {
       setUrl(urlFromQuery);
       handleVideoFetch(urlFromQuery);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlFromQuery]);
 
   return (
@@ -87,6 +123,12 @@ const YouTubeDownloaderPage: React.FC = () => {
           </button>
         </form>
       </section>
+      
+      {error && (
+        <div className="mt-8 text-center p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-300">
+            <p><strong>Error:</strong> {error}</p>
+        </div>
+      )}
 
       {isLoading && (
         <div className="mt-12 flex justify-center">

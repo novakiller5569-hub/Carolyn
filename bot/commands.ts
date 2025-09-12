@@ -1,4 +1,3 @@
-
 import TelegramBot from 'node-telegram-bot-api';
 import {
     startAddMovieFlow,
@@ -16,7 +15,7 @@ import { getUserState } from './utils';
 import { UserState } from './types';
 import { showCollectionsMenu, handleCollectionCallback } from './collectionManager';
 import { startUserLookup, handleUserLookupResponse } from './userManager';
-import { showAutomationMenu, handleAutomationCallback, handleAutomationUpdateResponse } from './monitoringManager';
+import { showAutomationMenu, handleAutomationCallback, handleAutomationUpdateResponse, showChannelsMenu } from './monitoringManager';
 import { startAddActorFlow, handleActorResponse } from './actorManager';
 
 // Main menu handler for the /start command
@@ -76,6 +75,7 @@ export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.Callbac
 
         // Automation
         else if (data === 'automation_menu') showAutomationMenu(bot, chatId, messageId);
+        else if (data === 'automation_channels_menu') showChannelsMenu(bot, chatId, messageId);
         else if (data.startsWith('automation_')) handleAutomationCallback(bot, query, refreshAutomation);
 
         // AI Features

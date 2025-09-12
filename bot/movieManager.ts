@@ -12,17 +12,18 @@ import { URL } from 'url';
 
 const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 const POSTERS_DIR = path.join(__dirname, '../../public/posters');
+const PROGRESS_PATH = path.join(__dirname, '../../data/channelProgress.json');
 
-const apiKey = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
-const ai = new GoogleGenAI({ apiKey });
+const YOUTUBE_API_KEY = 'AIzaSyAPpw-HEzuGxm9vSTfWvWN5xE1P-Htcic4';
+const GEMINI_API_KEY = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
+
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const model = 'gemini-2.5-flash';
 
 // Helper to read movies from the JSON file
 const readMovies = (): Movie[] => {
     try {
-        if (!fs.existsSync(MOVIES_PATH)) {
-            return [];
-        }
+        if (!fs.existsSync(MOVIES_PATH)) return [];
         const data = fs.readFileSync(MOVIES_PATH, 'utf-8');
         return JSON.parse(data);
     } catch (error) {
@@ -30,11 +31,15 @@ const readMovies = (): Movie[] => {
         return [];
     }
 };
+const writeMovies = (movies: Movie[]) => atomicWrite(MOVIES_PATH, JSON.stringify(movies, null, 2));
 
-// Helper to write movies to the JSON file
-const writeMovies = (movies: Movie[]) => {
-    atomicWrite(MOVIES_PATH, JSON.stringify(movies, null, 2));
+const readProgress = (): Record<string, { lastPageToken?: string; processedVideoIds: string[] }> => {
+    try {
+        if (!fs.existsSync(PROGRESS_PATH)) return {};
+        return JSON.parse(fs.readFileSync(PROGRESS_PATH, 'utf-8'));
+    } catch { return {}; }
 };
+const writeProgress = (progress: any) => atomicWrite(PROGRESS_PATH, JSON.stringify(progress, null, 2));
 
 
 // --- ADD MOVIE FLOW ---
@@ -110,7 +115,6 @@ const handleManualMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mess
             return;
         }
         try {
-            // Logic to save poster...
             await bot.sendChatAction(userId, 'upload_photo');
             const posterPath = await savePoster(bot, msg, state.movieData.title);
             state.movieData.poster = posterPath;
@@ -181,117 +185,129 @@ const handleManualMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Mess
     }
 };
 
+const getBestThumbnail = (thumbnails: any): string | null => {
+    if (!thumbnails) return null;
+    return thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.medium?.url || thumbnails.standard?.url || null;
+};
+
+const parseDuration = (duration: string): number => {
+    const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+    const matches = duration.match(regex);
+    if (!matches) return 0;
+    const hours = parseInt(matches[1] || '0');
+    const minutes = parseInt(matches[2] || '0');
+    return (hours * 60) + minutes;
+};
+
+
+const fetchYouTubeVideoDetails = async (videoIds: string[]): Promise<any[] | null> => {
+    if (videoIds.length === 0) return [];
+    const ids = videoIds.join(',');
+    try {
+        const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return (data.items && data.items.length > 0) ? data.items : [];
+    } catch (error) {
+        console.error("Error fetching from YouTube API:", error);
+        return null;
+    }
+};
+
+
 const handleYouTubeMovieResponse = async (bot: TelegramBot, msg: TelegramBot.Message) => {
     const userId = msg.from!.id;
     const state = getUserState(userId)!;
-
+    const extractVideoId = (url: string): string | null => {
+        const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+        const match = url.match(regex);
+        return match ? match[1] : null;
+    };
+    
     if (state.command === 'add_movie_youtube_url') {
         const url = msg.text;
-        if (!url || !(url.includes('youtube.com') || url.includes('youtu.be'))) {
+        const videoId = extractVideoId(url!);
+        if (!url || !videoId) {
             bot.sendMessage(userId, "That doesn't look like a valid YouTube URL. Please try again.");
             return;
         }
         
-        state.movieData = { downloadLink: url };
-        bot.sendMessage(userId, "⏳ Processing YouTube link... The AI is gathering details, this might take a moment.");
+        bot.sendMessage(userId, "⏳ Calling YouTube API... The AI will then arrange and correct the metadata.");
         await bot.sendChatAction(userId, 'typing');
 
+        const videoDetailsArr = await fetchYouTubeVideoDetails([videoId]);
+        if (!videoDetailsArr || videoDetailsArr.length === 0) {
+            bot.sendMessage(userId, "Could not fetch details for this YouTube URL. It might be invalid or the video is private.");
+            clearUserState(userId);
+            return;
+        }
+        const videoDetails = videoDetailsArr[0];
+        const { title, description } = videoDetails.snippet;
+        const durationMinutes = parseDuration(videoDetails.contentDetails.duration);
+        
+        if (durationMinutes < 15) {
+             bot.sendMessage(userId, `⚠️ This video is only ${durationMinutes} minutes long. It's likely a trailer. The movie has NOT been added. Please provide a link to the full movie.`);
+             clearUserState(userId);
+             return;
+        }
+        
+        const thumbnailUrl = getBestThumbnail(videoDetails.snippet.thumbnails);
+        if (!thumbnailUrl) {
+            bot.sendMessage(userId, "Could not find a thumbnail for this video. Cannot proceed.");
+            clearUserState(userId);
+            return;
+        }
+
         try {
-            const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract the following details for the specific Yoruba movie in the video and respond in a single, valid JSON object:
-- "title": The clean, official movie title. Do not include extra text like "Full Movie", "Official Trailer", etc.
-- "description": A compelling 30-40 word summary you generate by searching the web for the movie's plot.
+            const systemInstruction = `You are an AI data enrichment tool. Given a movie's YouTube title and description, clean the data and find details from the web. Respond in a single, valid JSON object with the following fields:
+- "title": The clean, official movie title. Remove extra text like "Full Movie", "Official Trailer", year tags, etc.
+- "description": A compelling 30-40 word summary based on the provided description and web search.
 - "stars": An array of the top 3-4 main actors.
 - "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
 - "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
-- "posterUrl": A direct, publicly accessible link to a high-quality JPG or PNG image file for the movie's poster. Do NOT provide a URL to a webpage. If a valid direct image link cannot be found, set this value to null.
 - "releaseDate": Today's date in YYYY-MM-DD format.`;
             const responseSchema = {
                 type: Type.OBJECT, properties: {
                     title: { type: Type.STRING }, description: { type: Type.STRING },
                     stars: { type: Type.ARRAY, items: { type: Type.STRING } },
                     genre: { type: Type.STRING }, category: { type: Type.STRING },
-                    releaseDate: { type: Type.STRING }, posterUrl: { type: Type.STRING }
+                    releaseDate: { type: Type.STRING }
                 },
-                required: ['title', 'description', 'stars', 'genre', 'category', 'posterUrl', 'releaseDate']
+                required: ['title', 'description', 'stars', 'genre', 'category', 'releaseDate']
             };
 
             const response = await ai.models.generateContent({
-                model, contents: `Extract full movie details for this YouTube video: ${url}`,
+                model, contents: `Enrich this movie data. YouTube Title: "${title}". YouTube Description: "${description}"`,
                 config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
             });
 
             const details = JSON.parse(response.text);
-            Object.assign(state.movieData, details);
-
-            // Attempt to download the poster automatically
-            const posterPath = await downloadImage(details.posterUrl, details.title);
-
-            if (posterPath) {
-                // SUCCESS: Poster downloaded, finish adding the movie
-                state.movieData.poster = posterPath;
-                const movies = readMovies();
-                if (movies.find(m => m.title.toLowerCase() === state.movieData.title.toLowerCase())) {
-                    bot.sendMessage(userId, `❌ Error! A movie titled "${state.movieData.title}" already exists.`);
-                    clearUserState(userId);
-                    return;
-                }
-                const newMovie: Movie = {
-                    id: state.movieData.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
-                    title: state.movieData.title, poster: state.movieData.poster,
-                    downloadLink: state.movieData.downloadLink, genre: state.movieData.genre,
-                    category: state.movieData.category, releaseDate: state.movieData.releaseDate,
-                    stars: state.movieData.stars, runtime: "N/A", rating: 7.0,
-                    description: state.movieData.description, popularity: 75,
-                    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-                };
-                writeMovies([...movies, newMovie]);
-                bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added automatically from YouTube.`);
-                clearUserState(userId);
-            } else {
-                // FAILURE: Poster download failed, ask user to provide one
-                state.command = 'add_movie_youtube_poster_manual';
-                setUserState(userId, state);
-                bot.sendMessage(userId, `🤖 AI has gathered details for "${details.title}", but could not download a valid poster. Please send a poster image manually to finish adding the movie.`);
-            }
-
-        } catch (e) {
-            console.error(e);
-            bot.sendMessage(userId, "❌ The AI failed to process this URL. Please try a different one or add the movie manually.");
-            clearUserState(userId);
-        }
-    } else if (state.command === 'add_movie_youtube_poster_manual') {
-        if (!msg.photo) {
-            bot.sendMessage(userId, "That's not an image. Please send the poster image.");
-            return;
-        }
-        try {
-            await bot.sendChatAction(userId, 'upload_photo');
-            const posterPath = await savePoster(bot, msg, state.movieData.title);
-            state.movieData.poster = posterPath;
+            const posterPath = await downloadImage(thumbnailUrl, details.title);
+            if (!posterPath) throw new Error("Failed to download thumbnail.");
 
             const movies = readMovies();
-            if (movies.find(m => m.title.toLowerCase() === state.movieData.title.toLowerCase())) {
-                bot.sendMessage(userId, `❌ Error! A movie titled "${state.movieData.title}" already exists.`);
+            if (movies.find(m => m.title.toLowerCase() === details.title.toLowerCase())) {
+                bot.sendMessage(userId, `❌ Error! A movie titled "${details.title}" already exists.`);
                 clearUserState(userId);
                 return;
             }
 
             const newMovie: Movie = {
-                id: state.movieData.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
-                title: state.movieData.title, poster: state.movieData.poster,
-                downloadLink: state.movieData.downloadLink, genre: state.movieData.genre,
-                category: state.movieData.category, releaseDate: state.movieData.releaseDate,
-                stars: state.movieData.stars, runtime: "N/A", rating: 7.0,
-                description: state.movieData.description, popularity: 75,
+                id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30),
+                title: details.title, poster: posterPath,
+                downloadLink: url, genre: details.genre,
+                category: details.category, releaseDate: details.releaseDate,
+                stars: details.stars, runtime: `${durationMinutes}m`, rating: 7.0,
+                description: details.description, popularity: 75,
                 createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
             };
             writeMovies([...movies, newMovie]);
-            bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added from YouTube with your provided poster.`);
+            bot.sendMessage(userId, `✅ Success! Movie "${newMovie.title}" has been added automatically from YouTube.`);
             clearUserState(userId);
 
-        } catch (error) {
-            console.error("Error saving poster for YouTube movie:", error);
-            bot.sendMessage(userId, "Sorry, there was an error with the poster. Please try the process again.");
+        } catch (e) {
+            console.error(e);
+            bot.sendMessage(userId, "❌ The AI failed to process this URL. Please try a different one or add the movie manually.");
             clearUserState(userId);
         }
     }
@@ -319,29 +335,18 @@ async function savePoster(bot: TelegramBot, msg: TelegramBot.Message, title: str
 
 // --- AUTONOMOUS MOVIE CREATION ---
 
-async function downloadImage(url: string | null, title: string): Promise<string | null> {
-    if (!url || !url.startsWith('http')) {
-        console.log(`Skipping download: Invalid or null URL provided for ${title}.`);
-        return null;
-    }
-
+async function downloadImage(url: string, title: string): Promise<string | null> {
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-        }
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
         
         const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.startsWith('image/')) {
-            throw new Error(`URL is not a direct image link. Content-Type: ${contentType}`);
-        }
+        if (!contentType || !contentType.startsWith('image/')) throw new Error(`URL is not a direct image link.`);
 
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
-        if (!fs.existsSync(POSTERS_DIR)) {
-            fs.mkdirSync(POSTERS_DIR, { recursive: true });
-        }
+        if (!fs.existsSync(POSTERS_DIR)) fs.mkdirSync(POSTERS_DIR, { recursive: true });
 
         const movieId = title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30);
         const pathname = new URL(url).pathname;
@@ -350,7 +355,6 @@ async function downloadImage(url: string | null, title: string): Promise<string 
         const posterPath = path.join(POSTERS_DIR, posterFileName);
 
         fs.writeFileSync(posterPath, buffer);
-        
         return `/posters/${posterFileName}`;
     } catch (error) {
         console.error(`Error downloading image for "${title}" from ${url}:`, error);
@@ -358,55 +362,55 @@ async function downloadImage(url: string | null, title: string): Promise<string 
     }
 }
 
-export const createMovieFromYouTube = async (youtubeUrl: string): Promise<Movie | null> => {
+export const createMovieFromYouTube = async (videoDetails: any): Promise<Movie | null> => {
     try {
-        const systemInstruction = `You are an AI data extraction tool. From the provided YouTube movie URL, extract the following details for the specific Yoruba movie in the video and respond in a single, valid JSON object:
-- "title": The clean, official movie title. Do not include extra text like "Full Movie", "Official Trailer", etc.
-- "description": A compelling 30-40 word summary you generate by searching the web for the movie's plot.
+        const { title, description, thumbnails } = videoDetails.snippet;
+        const durationMinutes = parseDuration(videoDetails.contentDetails.duration);
+        const thumbnailUrl = getBestThumbnail(thumbnails);
+
+        if (!thumbnailUrl) {
+            console.log(`Autonomous Finder: No thumbnail found for "${title}".`);
+            return null;
+        }
+
+        const systemInstruction = `You are an AI data enrichment tool. Given a movie's YouTube title and description, clean the data and find details from the web. Respond in a single, valid JSON object with the following fields:
+- "title": The clean, official movie title. Remove extra text like "Full Movie", "Official Trailer", year tags, etc.
+- "description": A compelling 30-40 word summary based on the provided description and web search.
 - "stars": An array of the top 3-4 main actors.
 - "genre": A single primary genre (e.g., "Drama", "Action", "Epic").
 - "category": Choose the best fit from 'Drama', 'Comedy', 'Action', 'Romance', 'Thriller', 'Epic'.
-- "posterUrl": A direct, publicly accessible link to a high-quality JPG or PNG image file for the movie's poster. Do NOT provide a URL to a webpage. If a valid direct image link cannot be found, set this value to null.
-- "releaseDate": The movie's release year or full date (YYYY-MM-DD). If unknown, use today's date.
-- "runtime": The approximate runtime (e.g., "2h 15m"). If unknown, use "N/A".`;
+- "releaseDate": The movie's release year or full date (YYYY-MM-DD). If unknown, use today's date.`;
         
         const responseSchema = {
             type: Type.OBJECT, properties: {
                 title: { type: Type.STRING }, description: { type: Type.STRING },
                 stars: { type: Type.ARRAY, items: { type: Type.STRING } },
                 genre: { type: Type.STRING }, category: { type: Type.STRING },
-                releaseDate: { type: Type.STRING }, posterUrl: { type: Type.STRING },
-                runtime: { type: Type.STRING },
+                releaseDate: { type: Type.STRING }
             },
-            required: ['title', 'description', 'stars', 'genre', 'category', 'posterUrl', 'releaseDate', 'runtime']
+            required: ['title', 'description', 'stars', 'genre', 'category', 'releaseDate']
         };
 
         const response = await ai.models.generateContent({
-            model, contents: `Extract full movie details for this YouTube video: ${youtubeUrl}`,
+            model, contents: `Enrich this movie data. YouTube Title: "${title}". YouTube Description: "${description}"`,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
         });
 
         const details = JSON.parse(response.text);
-
-        // Download the poster
-        const posterLocalPath = await downloadImage(details.posterUrl, details.title);
-        
-        if (!posterLocalPath) {
-            console.log(`Autonomous Finder: Could not download poster for "${details.title}". Aborting movie creation.`);
-            return null; // Indicate failure due to poster
-        }
+        const posterLocalPath = await downloadImage(thumbnailUrl, details.title);
+        if (!posterLocalPath) return null;
         
         const newMovie: Movie = {
-            id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30) + `-${Date.now().toString().slice(-4)}`, // Add timestamp to avoid collisions
-            title: details.title, poster: posterLocalPath, downloadLink: youtubeUrl,
+            id: details.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30) + `-${Date.now().toString().slice(-4)}`,
+            title: details.title, poster: posterLocalPath,
+            downloadLink: `https://www.youtube.com/watch?v=${videoDetails.id}`,
             genre: details.genre, category: details.category, releaseDate: details.releaseDate,
-            stars: details.stars, runtime: details.runtime,
-            rating: 7.0 + parseFloat((Math.random() * 2).toFixed(1)), // Assign a plausible random rating
+            stars: details.stars, runtime: `${durationMinutes}m`,
+            rating: 7.0 + parseFloat((Math.random() * 2).toFixed(1)),
             description: details.description,
-            popularity: 70 + Math.floor(Math.random() * 15), // Assign plausible popularity
+            popularity: 70 + Math.floor(Math.random() * 15),
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
         };
-
         return newMovie;
 
     } catch (error) {
@@ -415,10 +419,132 @@ export const createMovieFromYouTube = async (youtubeUrl: string): Promise<Movie 
     }
 };
 
+const getChannelIdFromUrl = async (channelUrl: string): Promise<string | null> => {
+    const handleMatch = channelUrl.match(/youtube\.com\/@([a-zA-Z0-9_-]+)/);
+    const idMatch = channelUrl.match(/youtube\.com\/channel\/([a-zA-Z0-9_-]+)/);
+
+    if (idMatch) return idMatch[1];
+    if (!handleMatch) return null;
+
+    const handle = handleMatch[1];
+    try {
+        // Use search endpoint to resolve handle to channel ID
+        const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${handle}&type=channel&key=${YOUTUBE_API_KEY}`);
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+            // Find the exact match for the handle in the search results
+            const foundChannel = data.items.find((item: any) => item.snippet.channelTitle.toLowerCase() === handle.toLowerCase() || item.snippet.customUrl === `@${handle}`);
+            return foundChannel ? foundChannel.snippet.channelId : data.items[0].snippet.channelId;
+        }
+        return null;
+    } catch (e) {
+        console.error("Failed to resolve channel handle:", e);
+        return null;
+    }
+};
+
+
+const getChannelUploadsPlaylistId = async (channelId: string): Promise<string | null> => {
+    try {
+        const response = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${YOUTUBE_API_KEY}`);
+        const data = await response.json();
+        return data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads || null;
+    } catch (e) {
+        console.error("Failed to get uploads playlist ID:", e);
+        return null;
+    }
+};
+
+
+export const processNextBatchForChannel = async (channelUrl: string, bot: TelegramBot) => {
+    const adminId = process.env.ADMIN_TELEGRAM_USER_ID!;
+    console.log(`Processing batch for channel: ${channelUrl}`);
+    const BATCH_SIZE = 5;
+
+    try {
+        const channelId = await getChannelIdFromUrl(channelUrl);
+        if (!channelId) {
+            bot.sendMessage(adminId, `❌ Could not resolve channel ID for ${channelUrl}. Skipping.`);
+            return;
+        }
+
+        const progress = readProgress();
+        const channelState = progress[channelId] || { processedVideoIds: [] };
+
+        const uploadsPlaylistId = await getChannelUploadsPlaylistId(channelId);
+        if (!uploadsPlaylistId) {
+            bot.sendMessage(adminId, `❌ Could not find uploads playlist for ${channelUrl}. Skipping.`);
+            return;
+        }
+
+        let url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=${BATCH_SIZE}&key=${YOUTUBE_API_KEY}`;
+        if (channelState.lastPageToken) {
+            url += `&pageToken=${channelState.lastPageToken}`;
+        }
+        
+        const playlistResponse = await fetch(url);
+        const playlistData = await playlistResponse.json();
+
+        if (!playlistData.items || playlistData.items.length === 0) {
+            bot.sendMessage(adminId, `✅ Finished processing all available videos for channel: ${channelUrl}`);
+            channelState.lastPageToken = undefined; // Reset for future checks
+            progress[channelId] = channelState;
+            writeProgress(progress);
+            return;
+        }
+
+        const videoIds = playlistData.items.map((item: any) => item.snippet.resourceId.videoId);
+        const videoDetails = await fetchYouTubeVideoDetails(videoIds);
+        
+        let newMoviesAdded = 0;
+        const currentMovies = readMovies();
+
+        for (const video of videoDetails || []) {
+            if (channelState.processedVideoIds.includes(video.id)) continue;
+            
+            const durationMinutes = parseDuration(video.contentDetails.duration);
+            if (durationMinutes < 15) {
+                console.log(`Skipping short video: ${video.snippet.title} (${durationMinutes}m)`);
+                channelState.processedVideoIds.push(video.id); // Mark as processed so we don't check again
+                continue;
+            }
+
+            const newMovie = await createMovieFromYouTube(video);
+            if (newMovie) {
+                if (currentMovies.some(m => m.title.toLowerCase() === newMovie.title.toLowerCase())) {
+                     bot.sendMessage(adminId, `⚠️ Skipped adding "${newMovie.title}" because a movie with that title already exists.`);
+                } else {
+                    currentMovies.push(newMovie);
+                    bot.sendMessage(adminId, `✅ Automatically added: "${newMovie.title}"`);
+                    newMoviesAdded++;
+                }
+            } else {
+                 bot.sendMessage(adminId, `❌ AI processing failed for video: ${video.snippet.title}`);
+            }
+            channelState.processedVideoIds.push(video.id);
+        }
+
+        if (newMoviesAdded > 0) {
+            writeMovies(currentMovies);
+        }
+
+        channelState.lastPageToken = playlistData.nextPageToken;
+        progress[channelId] = channelState;
+        writeProgress(progress);
+        
+        const summary = `Batch complete for ${channelUrl}. Added ${newMoviesAdded} new movies. ` + 
+                        (playlistData.nextPageToken ? "Will continue on the next run." : "Reached the end of the playlist.");
+        bot.sendMessage(adminId, summary);
+
+    } catch (e) {
+        console.error(`Error processing channel ${channelUrl}:`, e);
+        bot.sendMessage(adminId, `🚨 An error occurred while processing ${channelUrl}.`);
+    }
+};
+
 
 // --- EDIT/DELETE FLOWS ---
 export const showMoviesForEditing = (bot: TelegramBot, chatId: number, messageId: number) => {
-    // Implementation is complex, keeping it simple for now
     bot.editMessageText("Editing movie details is a planned feature.", { chat_id: chatId, message_id: messageId });
 };
 

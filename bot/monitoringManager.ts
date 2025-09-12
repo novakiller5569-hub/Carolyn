@@ -6,29 +6,21 @@ import fs from 'fs';
 import path from 'path';
 import { Movie } from './types';
 import { atomicWrite, setUserState, getUserState, clearUserState } from './utils';
-import { findNewTrendingMovie } from './aiHandler';
-import { createMovieFromYouTube } from './movieManager';
+import { processNextBatchForChannel } from './movieManager';
 
 
 const CONFIG_PATH = path.join(__dirname, './monitoringConfig.json');
-const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 
 interface AutomationConfig {
     autonomousFinder: {
         enabled: boolean;
         checkIntervalMinutes: number;
-    };
-    channelMonitor: {
-        enabled: boolean;
-        checkIntervalMinutes: number;
-        autoUploadChannels: string[];
-        notificationChannels: string[];
+        channelUrls: string[];
     };
 }
 
 const defaultConfig: AutomationConfig = {
-    autonomousFinder: { enabled: true, checkIntervalMinutes: 2 },
-    channelMonitor: { enabled: false, checkIntervalMinutes: 60, autoUploadChannels: [], notificationChannels: [] }
+    autonomousFinder: { enabled: true, checkIntervalMinutes: 60, channelUrls: [] },
 };
 
 export const getAutomationConfig = (): AutomationConfig => {
@@ -38,7 +30,6 @@ export const getAutomationConfig = (): AutomationConfig => {
             return defaultConfig;
         }
         const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
-        // Merge with default to handle missing keys from older configs
         const savedConfig = JSON.parse(data);
         return { ...defaultConfig, ...savedConfig };
     } catch {
@@ -48,115 +39,66 @@ export const getAutomationConfig = (): AutomationConfig => {
 
 const writeConfig = (config: AutomationConfig) => atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2));
 
-const readMovies = (): Movie[] => {
-    try {
-        if (!fs.existsSync(MOVIES_PATH)) return [];
-        return JSON.parse(fs.readFileSync(MOVIES_PATH, 'utf-8'));
-    } catch { return []; }
-};
-const writeMovies = (movies: Movie[]) => atomicWrite(MOVIES_PATH, JSON.stringify(movies, null, 2));
-
 
 // --- AUTONOMOUS MOVIE FINDER (NEW FEATURE) ---
 export const runAutonomousFinder = async (bot: TelegramBot) => {
     const config = getAutomationConfig();
-    if (!config.autonomousFinder.enabled) return;
+    if (!config.autonomousFinder.enabled || config.autonomousFinder.channelUrls.length === 0) return;
     
     const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
     if (!adminId) return;
 
-    try {
-        console.log("Autonomous Finder: Starting search...");
-        const movies = readMovies();
-        const existingTitles = movies.map(m => m.title);
-
-        const newVideoUrl = await findNewTrendingMovie(existingTitles);
-
-        if (!newVideoUrl) {
-            console.log("Autonomous Finder: No new trending movies found that met the criteria.");
-            return;
-        }
-
-        console.log(`Autonomous Finder: Found new candidate: ${newVideoUrl}`);
-        bot.sendMessage(adminId, `🤖 Found a new trending movie:\n${newVideoUrl}\n\n⏳ Processing with AI to extract details and find a poster...`, { disable_web_page_preview: true });
-
-        const newMovie = await createMovieFromYouTube(newVideoUrl);
-
-        if (!newMovie) {
-            bot.sendMessage(adminId, `❌ AI processing failed for the movie above. This is likely because a valid poster could not be automatically downloaded. Please try adding it manually if desired.`);
-            return;
-        }
-
-        const currentMovies = readMovies();
-        if (currentMovies.some(m => m.title.toLowerCase() === newMovie.title.toLowerCase())) {
-            bot.sendMessage(adminId, `⚠️ AI processed a new movie, but a movie named "${newMovie.title}" already exists. Upload aborted.`);
-            return;
-        }
-
-        writeMovies([...currentMovies, newMovie]);
-        bot.sendMessage(adminId, `✅ *Success!* The AI has automatically added a new movie:\n\n*Title:* ${newMovie.title}\n*Category:* ${newMovie.category}\n*Stars:* ${newMovie.stars.join(', ')}\n\nIt is now live on the website!`, { parse_mode: 'Markdown'});
-
-    } catch (error) {
-        console.error("Autonomous Finder encountered an error:", error);
-        bot.sendMessage(adminId, "🚨 The autonomous movie finder encountered an unexpected error. Please check the logs.");
-    }
-};
-
-
-// --- CHANNEL-SPECIFIC MONITOR (OLD FEATURE) ---
-const simulateCheck = (): { channel: string, videoTitle: string, videoUrl: string } | null => {
-    const config = getAutomationConfig().channelMonitor;
-    const allChannels = [...config.autoUploadChannels, ...config.notificationChannels];
-    if (allChannels.length === 0 || Math.random() > 0.4) {
-        return null;
-    }
-    const channel = allChannels[Math.floor(Math.random() * allChannels.length)];
-    return {
-        channel,
-        videoTitle: `Full Movie: Elesin Oba ${Math.floor(Math.random() * 100)} - New Yoruba Movie 2024`,
-        videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    };
-};
-
-export const checkChannelSpecificMonitor = async (bot: TelegramBot) => {
-    const config = getAutomationConfig().channelMonitor;
-    if (!config.enabled) return;
+    console.log("Autonomous Finder: Starting scheduled run...");
     
-    const newVideo = simulateCheck();
-    if (!newVideo) {
-        console.log("Channel Monitor: No new videos found in simulation.");
-        return;
-    }
-    
-    const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
-    if (!adminId) return;
-
-    bot.sendMessage(adminId, `🔔 *Channel Monitor Alert*\n\n(This is a simulated notification from the old system)\n\nChannel: *${newVideo.channel}*\nTitle: *${newVideo.videoTitle}*`, { parse_mode: 'Markdown' });
+    // Process one channel per run to distribute API usage
+    // A more advanced implementation might rotate channels
+    const channelToProcess = config.autonomousFinder.channelUrls[0];
+    await processNextBatchForChannel(channelToProcess, bot);
 };
-
 
 // --- UI and State Management ---
 export const showAutomationMenu = (bot: TelegramBot, chatId: number, messageId: number) => {
     const config = getAutomationConfig();
     const finderStatus = config.autonomousFinder.enabled ? '🟢 ON' : '🔴 OFF';
-    const monitorStatus = config.channelMonitor.enabled ? '🟢 ON' : '🔴 OFF';
 
     const text = `*🤖 Automation Settings*\n\n` +
-                 `*Autonomous Movie Finder:*\n` +
+                 `*Autonomous Channel Processor:*\n` +
                  `  - Status: *${finderStatus}*\n` +
-                 `  - Interval: *${config.autonomousFinder.checkIntervalMinutes} minutes*\n\n` +
-                 `*Channel-Specific Monitor:*\n` +
-                 `  - Status: *${monitorStatus}*\n` +
-                 `  - Interval: *${config.channelMonitor.checkIntervalMinutes} minutes*\n`;
+                 `  - Interval: *${config.autonomousFinder.checkIntervalMinutes} minutes*\n` +
+                 `  - Channels: *${config.autonomousFinder.channelUrls.length} configured*`;
     
     bot.editMessageText(text, {
         chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                [{ text: "▶️ Trigger Autonomous Search Now", callback_data: 'automation_finder_run' }],
+                [{ text: "▶️ Process Channels Now", callback_data: 'automation_finder_run' }],
                 [{ text: `Toggle Finder ${config.autonomousFinder.enabled ? 'OFF' : 'ON'}`, callback_data: 'automation_finder_toggle' }, { text: "⏰ Set Finder Interval", callback_data: 'automation_finder_interval' }],
-                [{ text: `Toggle Monitor ${config.channelMonitor.enabled ? 'OFF' : 'ON'}`, callback_data: 'automation_monitor_toggle' }, { text: "⏰ Set Monitor Interval", callback_data: 'automation_monitor_interval' }],
+                [{ text: "📺 Configure Channels", callback_data: 'automation_channels_menu'}],
                 [{ text: "⬅️ Back", callback_data: "main_menu" }]
+            ]
+        }
+    });
+};
+
+export const showChannelsMenu = (bot: TelegramBot, chatId: number, messageId: number) => {
+    const config = getAutomationConfig();
+    const channels = config.autonomousFinder.channelUrls;
+    let text = "*📺 Monitored Channels*\n\n";
+
+    if (channels.length === 0) {
+        text += "_No channels configured yet._";
+    } else {
+        channels.forEach((url, i) => {
+            text += `${i + 1}. \`${url}\`\n`;
+        });
+    }
+
+    bot.editMessageText(text, {
+        chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', disable_web_page_preview: true,
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "➕ Add Channel", callback_data: 'automation_channel_add' }, { text: "🗑️ Remove Channel", callback_data: 'automation_channel_remove_select' }],
+                [{ text: "⬅️ Back", callback_data: "automation_menu" }]
             ]
         }
     });
@@ -165,29 +107,46 @@ export const showAutomationMenu = (bot: TelegramBot, chatId: number, messageId: 
 export const handleAutomationCallback = (bot: TelegramBot, query: TelegramBot.CallbackQuery, refreshAutomation?: () => void) => {
     const msg = query.message!;
     const data = query.data!;
+    const userId = query.from.id;
     const config = getAutomationConfig();
 
     if (data === 'automation_finder_run') {
-        bot.answerCallbackQuery(query.id, { text: "Starting autonomous search..." });
-        runAutonomousFinder(bot); // Manually trigger
-        return; // Don't redraw menu
-    }
-    else if (data === 'automation_finder_toggle') {
+        bot.answerCallbackQuery(query.id, { text: "Starting manual channel processing..." });
+        runAutonomousFinder(bot);
+        return;
+    } else if (data === 'automation_finder_toggle') {
         config.autonomousFinder.enabled = !config.autonomousFinder.enabled;
     } else if (data === 'automation_finder_interval') {
-        setUserState(msg.from!.id, { command: 'automation_update_finder_interval' });
-        bot.sendMessage(msg.chat.id, "Enter the new search interval in minutes for the Autonomous Finder (e.g., 2):");
-    } else if (data === 'automation_monitor_toggle') {
-        config.channelMonitor.enabled = !config.channelMonitor.enabled;
-    } else if (data === 'automation_monitor_interval') {
-        setUserState(msg.from!.id, { command: 'automation_update_monitor_interval' });
-        bot.sendMessage(msg.chat.id, "Enter new check interval in minutes for the Channel Monitor (e.g., 60):");
+        setUserState(userId, { command: 'automation_update_finder_interval' });
+        bot.sendMessage(msg.chat.id, "Enter the new search interval in minutes (e.g., 60):");
+    } else if (data === 'automation_channel_add') {
+        setUserState(userId, { command: 'automation_add_channel_url' });
+        bot.sendMessage(msg.chat.id, "Please send the full YouTube channel URL to add for monitoring.");
+    } else if (data === 'automation_channel_remove_select') {
+        const channels = config.autonomousFinder.channelUrls;
+        if (channels.length === 0) {
+             bot.answerCallbackQuery(query.id, { text: "No channels to remove." });
+             return;
+        }
+        const keyboard = channels.map((url, index) => ([{text: `❌ ${url.split('/').pop()}`, callback_data: `automation_channel_remove_exec_${index}`}]));
+        keyboard.push([{ text: "⬅️ Back", callback_data: 'automation_channels_menu' }]);
+        bot.editMessageText("Select a channel to remove:", {
+            chat_id: msg.chat.id, message_id: msg.message_id, reply_markup: { inline_keyboard: keyboard }
+        });
+        bot.answerCallbackQuery(query.id);
+        return; // Avoid redrawing menu
+    } else if (data.startsWith('automation_channel_remove_exec_')) {
+        const index = parseInt(data.split('_').pop()!, 10);
+        config.autonomousFinder.channelUrls.splice(index, 1);
+        showChannelsMenu(bot, msg.chat.id, msg.message_id);
     }
     
     writeConfig(config);
     if (refreshAutomation) refreshAutomation();
 
-    showAutomationMenu(bot, msg.chat.id, msg.message_id);
+    if (!data.startsWith('automation_channel_remove')) {
+        showAutomationMenu(bot, msg.chat.id, msg.message_id);
+    }
     bot.answerCallbackQuery(query.id);
 };
 
@@ -198,21 +157,27 @@ export const handleAutomationUpdateResponse = (bot: TelegramBot, msg: TelegramBo
     const config = getAutomationConfig();
     let changed = false;
 
-    const interval = parseInt(text, 10);
-    if (isNaN(interval) || interval <= 0) {
-        bot.sendMessage(userId, `❌ Invalid number.`);
-        clearUserState(userId);
-        return;
-    }
+    if (state?.command === 'automation_add_channel_url') {
+        if (text.includes('youtube.com/')) {
+            config.autonomousFinder.channelUrls.push(text);
+            bot.sendMessage(userId, `✅ Channel added! The bot will start processing its videos on the next run.`);
+            changed = true;
+        } else {
+             bot.sendMessage(userId, `❌ That does not look like a valid YouTube channel URL.`);
+        }
+    } else {
+        const interval = parseInt(text, 10);
+        if (isNaN(interval) || interval <= 0) {
+            bot.sendMessage(userId, `❌ Invalid number.`);
+            clearUserState(userId);
+            return;
+        }
 
-    if (state?.command === 'automation_update_finder_interval') {
-        config.autonomousFinder.checkIntervalMinutes = interval;
-        bot.sendMessage(userId, `✅ Autonomous Finder interval set to ${interval} minutes.`);
-        changed = true;
-    } else if (state?.command === 'automation_update_monitor_interval') {
-        config.channelMonitor.checkIntervalMinutes = interval;
-        bot.sendMessage(userId, `✅ Channel Monitor interval set to ${interval} minutes.`);
-        changed = true;
+        if (state?.command === 'automation_update_finder_interval') {
+            config.autonomousFinder.checkIntervalMinutes = interval;
+            bot.sendMessage(userId, `✅ Autonomous Finder interval set to ${interval} minutes.`);
+            changed = true;
+        }
     }
 
     if (changed) {

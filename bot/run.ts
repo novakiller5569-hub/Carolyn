@@ -5,7 +5,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { handleStartCommand, handleCallbackQuery, handleMessage } from './commands';
 import { clearAllUserStates } from './utils';
 import { getWeeklyDigest } from './aiHandler';
-import { getAutomationConfig, checkChannelSpecificMonitor, runAutonomousFinder } from './monitoringManager';
+import { getAutomationConfig, runAutonomousFinder } from './monitoringManager';
 
 // This file is required by index.ts and assumes environment checks have passed.
 
@@ -57,29 +57,14 @@ const scheduleWeeklyDigest = () => {
 };
 
 
-// 2. Automation Tasks (Channel Monitor & Autonomous Finder)
-// FIX: Changed NodeJS.Timeout to 'any' to resolve TypeScript error about missing Node.js type definitions.
-let channelMonitorInterval: any | null = null;
+// 2. Automation Tasks
 let autonomousFinderInterval: any | null = null;
 
 const setupAutomationIntervals = () => {
     // Clear existing intervals to allow for config reloads
-    if (channelMonitorInterval) clearInterval(channelMonitorInterval);
     if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
 
     const config = getAutomationConfig();
-
-    // Setup Channel-Specific Monitor (the old system)
-    if (config.channelMonitor.enabled && config.channelMonitor.checkIntervalMinutes > 0) {
-        const intervalMs = config.channelMonitor.checkIntervalMinutes * 60 * 1000;
-        channelMonitorInterval = setInterval(() => {
-            console.log("Running scheduled task: Channel-Specific Monitoring...");
-            checkChannelSpecificMonitor(bot);
-        }, intervalMs);
-        console.log(`Channel-specific monitoring scheduled to run every ${config.channelMonitor.checkIntervalMinutes} minutes.`);
-    } else {
-        console.log("Channel-specific monitoring is disabled.");
-    }
 
     // Setup Autonomous Movie Finder (the new system)
     if (config.autonomousFinder.enabled && config.autonomousFinder.checkIntervalMinutes > 0) {
@@ -135,7 +120,6 @@ console.log("✅ Yoruba Cinemax Admin Bot is running!");
 
 process.on('SIGINT', () => {
     console.log("Bot is shutting down...");
-    if (channelMonitorInterval) clearInterval(channelMonitorInterval);
     if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
     bot.stopPolling().catch(err => console.error("Error stopping polling:", err));
     process.exit();
