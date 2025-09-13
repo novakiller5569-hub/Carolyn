@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+// FIX: react-router-dom v5 uses useLocation and useHistory instead of useSearchParams.
+import { useLocation, useNavigate } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
 import Pagination from '../components/Pagination';
 import BackButton from '../components/BackButton';
@@ -10,11 +11,13 @@ import LoadingSpinner from '../components/LoadingSpinner';
 const MOVIES_PER_PAGE = 10;
 
 const TrendingPage: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { movies, loading, error } = useMovies();
 
   const [currentPage, setCurrentPage] = useState(() => {
-    const pageParam = searchParams.get('page');
+    const params = new URLSearchParams(location.search);
+    const pageParam = params.get('page');
     return pageParam ? parseInt(pageParam, 10) : 1;
   });
   const pageContentRef = useRef<HTMLDivElement>(null);
@@ -37,8 +40,8 @@ const TrendingPage: React.FC = () => {
     if (currentPage > 1) {
       params.set('page', String(currentPage));
     }
-    setSearchParams(params, { replace: true });
-  }, [currentPage, setSearchParams]);
+    navigate({ search: params.toString() }, { replace: true });
+  }, [currentPage, navigate]);
 
   useEffect(() => {
     // Scroll to top of content when page changes, but not on initial load

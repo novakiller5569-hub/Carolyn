@@ -1,10 +1,10 @@
 
-import React, { MouseEvent } from 'react';
+import React, { MouseEvent, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Movie } from '../services/types';
 import { StarIcon, BookmarkIcon } from './icons/Icons';
 import { useAuth } from '../contexts/AuthContext';
-import { toggleWatchlist, isInWatchlist } from '../services/storageService';
+import * as storage from '../services/storageService';
 
 
 interface MovieCardProps {
@@ -14,21 +14,52 @@ interface MovieCardProps {
 
 const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
   const { currentUser } = useAuth();
-  const [inWatchlist, setInWatchlist] = React.useState(currentUser ? isInWatchlist(currentUser.id, movie.id) : false);
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  React.useEffect(() => {
-    setInWatchlist(currentUser ? isInWatchlist(currentUser.id, movie.id) : false);
+  // Effect to check initial watchlist status from the API
+  useEffect(() => {
+    let isMounted = true;
+    const checkWatchlist = async () => {
+      if (currentUser) {
+        try {
+          const data = await storage.getUserData();
+          if (isMounted) {
+            setInWatchlist(data.watchlist.includes(movie.id));
+          }
+        } catch (error) {
+          console.error("Failed to check watchlist status", error);
+        } finally {
+            if (isMounted) setIsLoading(false);
+        }
+      } else {
+        setIsLoading(false);
+      }
+    };
+    checkWatchlist();
+    return () => { isMounted = false; };
   }, [currentUser, movie.id]);
 
-  const handleWatchlistToggle = (e: MouseEvent<HTMLButtonElement>) => {
+
+  const handleWatchlistToggle = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (currentUser) {
-      toggleWatchlist(currentUser.id, movie.id);
-      setInWatchlist(!inWatchlist);
-    } else {
-      // Maybe navigate to login or show a toast
+    if (!currentUser) {
       alert('Please log in to add movies to your watchlist.');
+      return;
+    }
+    
+    // Optimistic UI update
+    const previousState = inWatchlist;
+    setInWatchlist(!previousState);
+
+    try {
+      await storage.toggleWatchlist(movie.id);
+    } catch (error) {
+      console.error("Failed to toggle watchlist", error);
+      // Revert on error
+      setInWatchlist(previousState);
+      alert('Could not update watchlist. Please try again.');
     }
   };
 
@@ -51,11 +82,12 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, animationDelay }) => {
         {currentUser && (
           <button
             onClick={handleWatchlistToggle}
+            disabled={isLoading}
             className={`absolute top-2 left-2 p-1.5 rounded-full transition-colors duration-200 z-10 ${
               inWatchlist 
                 ? 'bg-green-500 text-white' 
                 : 'bg-black/60 backdrop-blur-sm text-gray-200 hover:bg-green-600 hover:text-white'
-            }`}
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
             aria-label={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
             title={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
           >

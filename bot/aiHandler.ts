@@ -2,9 +2,12 @@
 declare const __dirname: string;
 
 import TelegramBot from 'node-telegram-bot-api';
-import { GoogleGenAI, Type } from "@google/genai";
+// FIX: The .send() command is not available on the BedrockRuntimeClient in some environments/versions.
+// Using invokeModel() directly with the parameters is a reliable alternative.
+// Corrected: Import InvokeModelCommand to use the correct AWS SDK v3 client.send() pattern.
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { getAnalyticsSummary } from './analyticsService';
-import { setUserState, getUserState, clearUserState } from './utils';
+import { setUserState, clearUserState } from './utils';
 import fs from 'fs';
 import path from 'path';
 import { Movie, Actor } from './types';
@@ -13,10 +16,8 @@ import { atomicWrite } from './utils';
 const MOVIES_PATH = path.join(__dirname, '../../data/movies.json');
 const ACTORS_PATH = path.join(__dirname, '../../data/actors.json');
 
-const apiKey = "AIzaSyB12BsvYrfH536bmxTj7Rdj3fY_ScjKecQ";
-
-const ai = new GoogleGenAI({ apiKey });
-const model = 'gemini-2.5-flash';
+const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const modelId = 'anthropic.claude-3-7-sonnet-20240715-v1:0';
 
 const readMovies = (): Movie[] => {
     try {
@@ -34,6 +35,28 @@ const readActors = (): Actor[] => {
     } catch { return []; }
 };
 const writeActors = (actors: Actor[]) => atomicWrite(ACTORS_PATH, JSON.stringify(actors, null, 2));
+
+const invokeClaude = async (systemInstruction: string, userPrompt: string): Promise<any> => {
+    const payload = {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 2048,
+        system: systemInstruction,
+        messages: [{ role: 'user', content: userPrompt }],
+    };
+    // FIX: The .send() command is not available on the BedrockRuntimeClient in some environments/versions.
+    // Using invokeModel() directly with the parameters is a reliable alternative.
+    // Corrected: Use the client.send(new Command()) pattern for AWS SDK v3.
+    const command = new InvokeModelCommand({
+        body: JSON.stringify(payload),
+        contentType: 'application/json',
+        accept: 'application/json',
+        modelId,
+    });
+    const apiResponse = await client.send(command);
+    const decodedBody = new TextDecoder().decode(apiResponse.body);
+    const responseBody = JSON.parse(decodedBody);
+    return responseBody.content?.[0]?.text || "Sorry, I encountered an error.";
+};
 
 const endChatKeyboard = {
     inline_keyboard: [[{ text: "🔚 End Chat", callback_data: "ai_end_chat" }]]
@@ -89,11 +112,11 @@ export const handleAiQuery = async (bot: TelegramBot, msg: TelegramBot.Message) 
 ${movieContext}
 `;
         
-        const response = await ai.models.generateContent({ model, contents: query, config: { systemInstruction } });
-        bot.sendMessage(chatId, response.text, { reply_markup: endChatKeyboard });
+        const responseText = await invokeClaude(systemInstruction, query);
+        bot.sendMessage(chatId, responseText, { reply_markup: endChatKeyboard });
 
     } catch (error) {
-        console.error("Gemini API Error:", error);
+        console.error("Bedrock AI Error:", error);
         bot.sendMessage(chatId, "Sorry, I'm having trouble thinking right now. Please try again later.", { reply_markup: endChatKeyboard });
     }
 };
@@ -104,15 +127,12 @@ export const suggestNewMovies = async (bot: TelegramBot, chatId: number) => {
         const currentMovies = readMovies();
         const existingTitles = currentMovies.map(m => m.title).join(', ');
 
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Find 3 popular or trending Yoruba movies that are NOT in this list: ${existingTitles}.`,
-            config: {
-                tools: [{ googleSearch: {} }],
-            }
-        });
+        const system = "You are a movie suggestion expert. Your task is to find 3 popular or trending Yoruba movies that are NOT in the provided list. Use your internal knowledge of world cinema.";
+        const prompt = `Find 3 movies that are not on this list: ${existingTitles}.`;
         
-        bot.sendMessage(chatId, `🧠 *AI Suggestions based on web search:*\n\n${response.text}`, { parse_mode: 'Markdown' });
+        const responseText = await invokeClaude(system, prompt);
+        
+        bot.sendMessage(chatId, `🧠 *AI Suggestions based on its knowledge:*\n\n${responseText}`, { parse_mode: 'Markdown' });
 
     } catch(e) {
         bot.sendMessage(chatId, "Could not fetch suggestions at this time.");
@@ -140,10 +160,10 @@ export const getWeeklyDigest = async (bot: TelegramBot) => {
 
 Please generate the weekly report.`;
 
-        const response = await ai.models.generateContent({ model, contents: prompt, config: { systemInstruction } });
+        const responseText = await invokeClaude(systemInstruction, prompt);
 
         const reportHeader = "📊 *Your Weekly Performance Report* 📊\n\n";
-        bot.sendMessage(adminId, reportHeader + response.text, { parse_mode: 'Markdown' });
+        bot.sendMessage(adminId, reportHeader + responseText, { parse_mode: 'Markdown' });
 
     } catch (e) {
         console.error("Failed to generate weekly digest:", e);
@@ -153,21 +173,14 @@ Please generate the weekly report.`;
 
 export const generateActorProfile = async (actorName: string): Promise<Partial<Actor> | null> => {
     try {
-        const systemInstruction = `You are an AI data specialist. Find a concise one-paragraph biography and a direct URL to a high-quality, public-domain portrait image for the specified Yoruba movie actor. Use Google Search. Respond in JSON format. If no good image URL is found, the imageUrl should be null.`;
-        const responseSchema = {
-            type: Type.OBJECT, properties: {
-                bio: { type: Type.STRING },
-                imageUrl: { type: Type.STRING, description: "A direct link to a JPG/PNG image file, or null." }
-            }
-        };
+        const systemInstruction = `You are an AI data specialist. Find a concise one-paragraph biography and a direct URL to a high-quality, public-domain portrait image for the specified Yoruba movie actor.
+Respond ONLY with a valid JSON object. If no good image URL is found, the imageUrl should be null.
+Example response: { "bio": "...", "imageUrl": "https://..." }`;
+        const userPrompt = `Find bio and image URL for actor: ${actorName}`;
 
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Find bio and image URL for actor: ${actorName}`,
-            config: { systemInstruction, responseMimeType: "application/json", responseSchema, tools: [{ googleSearch: {} }] }
-        });
+        const responseText = await invokeClaude(systemInstruction, userPrompt);
         
-        return JSON.parse(response.text);
+        return JSON.parse(responseText);
     } catch (error) {
         console.error(`AI failed to generate profile for ${actorName}:`, error);
         return null;

@@ -1,6 +1,11 @@
 
+
+
+
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+// FIX: react-router-dom v5 uses useLocation and useHistory instead of useSearchParams.
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
 import Pagination from '../components/Pagination';
 import { Movie } from '../services/types';
@@ -50,21 +55,26 @@ const FeaturedMovie: React.FC<{ movie: Movie }> = React.memo(({ movie }) => (
 
 
 const HomePage: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { movies, loading, error } = useMovies();
   const { currentUser } = useAuth();
   const { config } = useSiteConfig();
 
   const [currentPage, setCurrentPage] = useState(() => {
-    const pageParam = searchParams.get('page');
+    const params = new URLSearchParams(location.search);
+    const pageParam = params.get('page');
     return pageParam ? parseInt(pageParam, 10) : 1;
   });
 
-  const [filters, setFilters] = useState(() => ({
-    category: searchParams.get('category') || 'All',
-    year: searchParams.get('year') || 'All',
-    sort: searchParams.get('sort') || 'newest',
-  }));
+  const [filters, setFilters] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return {
+      category: params.get('category') || 'All',
+      year: params.get('year') || 'All',
+      sort: params.get('sort') || 'newest',
+    }
+  });
 
   const isInitialMount = useRef(true);
 
@@ -97,8 +107,8 @@ const HomePage: React.FC = () => {
     if (filters.sort !== 'newest') params.set('sort', filters.sort);
     
     // Use replace to not clutter browser history on filter/page changes
-    setSearchParams(params, { replace: true });
-  }, [currentPage, filters, setSearchParams]);
+    navigate({ search: params.toString() }, { replace: true });
+  }, [currentPage, filters, navigate]);
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -149,7 +159,8 @@ const HomePage: React.FC = () => {
   );
 
   const categories = useMemo(() => ['All', ...Array.from(new Set(movies.map(m => m.category)))], [movies]);
-  const years = useMemo(() => ['All', ...Array.from(new Set(movies.map(m => new Date(m.releaseDate).getFullYear()))).sort((a,b) => b-a).map(String)], [movies]);
+  // @FIX: Correctly infer types for the years array by providing a generic type to `new Set`, resolving sort and prop type errors.
+  const years = useMemo(() => ['All', ...[...new Set<number>(movies.map(m => new Date(m.releaseDate).getFullYear()))].sort((a, b) => b - a).map(String)], [movies]);
   
   const FilterSelect: React.FC<{name: string, label: string, value: string, options: string[], onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void}> = ({name, label, value, options, onChange}) => (
     <div>

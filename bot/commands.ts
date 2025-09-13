@@ -7,7 +7,9 @@ import {
     handleEditMovieCallback,
     handleDeleteMovieCallback,
     startManualAddFlow,
-    startYouTubeAddFlow
+    startYouTubeAddFlow,
+    handleEditMovieResponse,
+    handleYouTubeConfirmation
 } from './movieManager';
 import { showSiteSettingsMenu, handleSiteSettingsCallback, handleSiteUpdateResponse, showLiveTvMenu, handleLiveTvSettingsCallback } from './siteManager';
 import { handleAiQuery, startAiChat, suggestNewMovies, endAiChat } from './aiHandler';
@@ -21,14 +23,14 @@ import { startAddActorFlow, handleActorResponse } from './actorManager';
 // Main menu handler for the /start command
 export const handleStartCommand = (bot: TelegramBot, msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Welcome to the Yoruba Cinemax Admin Bot!", {
+    bot.sendMessage(chatId, "Welcome to the Yoruba Cinemax Admin Bot!\n\nTo search for a movie, type my username in any chat followed by your query (e.g., `@YourBotName Anikulapo`).", {
         reply_markup: {
             inline_keyboard: [
-                [{ text: "🎬 Manage Movies", callback_data: "manage_movies" }, { text: "📚 Manage Collections", callback_data: "manage_collections" }],
-                [{ text: "🎭 Manage Actors", callback_data: "manage_actors" }, { text: "👤 Manage Users", callback_data: "manage_users" }],
-                [{ text: "📺 Live TV Settings", callback_data: "manage_livetv" }, { text: "🤖 Automation", callback_data: "automation_menu" }],
-                [{ text: "⚙️ Site Settings", callback_data: "site_settings" }, { text: "🧠 AI Suggestions", callback_data: "ai_suggest" }],
-                [{ text: "📊 AI Analytics Chat", callback_data: "ai_analytics" }],
+                [{ text: "🎬 Manage Movies", callback_data: "manage_movies" }],
+                [{ text: "📚 Manage Collections", callback_data: "manage_collections" }, { text: "🎭 Manage Actors", callback_data: "manage_actors" }],
+                [{ text: "👤 Manage Users", callback_data: "manage_users" }, { text: "📺 Live TV Settings", callback_data: "manage_livetv" }],
+                [{ text: "🤖 Automation", callback_data: "automation_menu" }, { text: "⚙️ Site Settings", callback_data: "site_settings" }],
+                [{ text: "🧠 AI Suggestions", callback_data: "ai_suggest" }, { text: "📊 AI Analytics Chat", callback_data: "ai_analytics" }],
             ]
         }
     });
@@ -48,10 +50,11 @@ export const handleCallbackQuery = (bot: TelegramBot, query: TelegramBot.Callbac
         else if (data === 'add_movie') startAddMovieFlow(bot, chatId, messageId);
         else if (data === 'add_movie_youtube') startYouTubeAddFlow(bot, chatId);
         else if (data === 'add_movie_manual') startManualAddFlow(bot, chatId);
-        else if (data === 'edit_movie_select') showMoviesForEditing(bot, chatId, messageId);
+        else if (data === 'edit_movie_select' || data === 'edit_movie_list') showMoviesForEditing(bot, chatId, messageId);
         else if (data.startsWith('edit_movie_')) handleEditMovieCallback(bot, query);
         else if (data === 'delete_movie_select') showMoviesForDeletion(bot, chatId, messageId);
         else if (data.startsWith('delete_movie_')) handleDeleteMovieCallback(bot, query);
+        else if (data.startsWith('youtube_movie_')) handleYouTubeConfirmation(bot, query);
         
         // Collection Management
         else if (data === 'manage_collections') showCollectionsMenu(bot, chatId, messageId);
@@ -102,7 +105,8 @@ export const handleMessage = async (bot: TelegramBot, msg: TelegramBot.Message) 
     
     // Route to the appropriate handler based on the command in the user's state
     const { command } = userState;
-    if (command.startsWith('add_movie_manual') || command.startsWith('add_movie_youtube') || command.startsWith('edit_movie_')) await handleAddMovieResponse(bot, msg);
+    if (command.startsWith('add_movie_manual') || command.startsWith('add_movie_youtube')) await handleAddMovieResponse(bot, msg);
+    else if (command === 'editing_movie_value') await handleEditMovieResponse(bot, msg);
     else if (command.startsWith('collection_')) await handleCollectionCallback(bot, { message: msg } as TelegramBot.CallbackQuery);
     else if (command.startsWith('actor_')) await handleActorResponse(bot, msg);
     else if (command.startsWith('sitesettings_')) await handleSiteUpdateResponse(bot, msg);
@@ -115,7 +119,7 @@ export const handleMessage = async (bot: TelegramBot, msg: TelegramBot.Message) 
 // --- Sub-menus for cleaner routing ---
 
 const showMovieMenu = (bot: TelegramBot, chatId: number, messageId: number) => {
-    bot.editMessageText("🎬 Movie Management", {
+    bot.editMessageText("🎬 Movie Management\n\nUse inline search (`@botname query`) to find movies quickly.", {
         chat_id: chatId,
         message_id: messageId,
         reply_markup: {

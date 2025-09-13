@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+// FIX: react-router-dom v6 uses useNavigate instead of useHistory.
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storageService';
@@ -39,29 +40,20 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     
     if (!currentUser) return;
-
-    if (storage.isUsernameTaken(username, currentUser.id)) {
-      setError('Username is already taken. Please choose another.');
-      return;
-    }
-
+    
     setIsLoading(true);
     try {
-      const updatedUser = storage.updateUserProfile(currentUser.id, { name, username, profilePic });
-      if (updatedUser) {
-        updateCurrentUser(updatedUser);
-        setSuccess('Profile updated successfully!');
-      } else {
-        setError('An error occurred while updating the profile.');
-      }
+      const updatedUser = await storage.updateUserProfile({ name, username, profilePic });
+      updateCurrentUser(updatedUser);
+      setSuccess('Profile updated successfully!');
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
+      setError((err as Error).message || 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }

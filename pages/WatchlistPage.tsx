@@ -1,8 +1,8 @@
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMovies } from '../contexts/MovieContext';
-import { getWatchlist } from '../services/storageService';
+import * as storage from '../services/storageService';
 import MovieCard from '../components/MovieCard';
 import BackButton from '../components/BackButton';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -11,40 +11,55 @@ import { useNavigate, Link } from 'react-router-dom';
 
 const WatchlistPage: React.FC = () => {
   const { currentUser } = useAuth();
-  const { movies, loading, error } = useMovies();
+  const { movies, loading: moviesLoading, error: moviesError } = useMovies();
   const navigate = useNavigate();
 
-  // Redirect to login if not authenticated
+  const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+
   useEffect(() => {
-    if (!loading && !currentUser) {
+    if (!moviesLoading && !currentUser) {
       navigate('/login');
+      return;
     }
-  }, [currentUser, loading, navigate]);
-  
-  // useMemo to prevent re-calculating on every render
+    
+    const fetchWatchlist = async () => {
+        if (currentUser) {
+            try {
+                const data = await storage.getUserData();
+                setWatchlistIds(data.watchlist);
+            } catch (error) {
+                console.error("Failed to fetch watchlist:", error);
+            } finally {
+                setDataLoading(false);
+            }
+        } else {
+            setDataLoading(false);
+        }
+    };
+    
+    // Only fetch when the movie data is ready
+    if (!moviesLoading) {
+      fetchWatchlist();
+    }
+  }, [currentUser, moviesLoading, navigate]);
+
   const watchlistMovies = useMemo(() => {
-    if (!currentUser || movies.length === 0) {
-      return [];
-    }
-    const watchlistIds = getWatchlist(currentUser.id);
-    // Filter movies and maintain the order they were added in (or reverse it for newest first)
-    return watchlistIds.map(id => movies.find(movie => movie.id === id)).filter(Boolean).reverse() as (typeof movies);
-  }, [currentUser, movies]);
+    if (movies.length === 0) return [];
+    // Filter movies and maintain the order they were added in (reverse for newest first)
+    return [...watchlistIds].reverse().map(id => movies.find(movie => movie.id === id)).filter(Boolean) as (typeof movies);
+  }, [watchlistIds, movies]);
 
+  const isLoading = moviesLoading || dataLoading;
 
-  if (loading) {
+  if (isLoading) {
     return <div className="flex justify-center items-center h-full py-20"><LoadingSpinner text="Loading your watchlist..." /></div>;
   }
 
-  if (error) {
-    return <div className="text-center py-20 text-red-400">Error: {error}</div>;
+  if (moviesError) {
+    return <div className="text-center py-20 text-red-400">Error: {moviesError}</div>;
   }
   
-  if (!currentUser) {
-    // This will be briefly visible before the redirect effect kicks in
-    return <div className="text-center py-20"><p>Redirecting to login...</p></div>;
-  }
-
   return (
     <div>
       <BackButton />

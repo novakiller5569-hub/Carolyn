@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+// FIX: react-router-dom v5 uses useHistory instead of useNavigate.
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FilmIcon } from '../components/icons/Icons';
@@ -14,7 +15,7 @@ const LoginPage: React.FC = () => {
   const location = useLocation();
   const { login, currentUser } = useAuth();
 
-  const from = location.state?.from || '/';
+  const from = (location.state as { from?: string })?.from || '/';
 
   useEffect(() => {
     if (currentUser) {
@@ -29,13 +30,12 @@ const LoginPage: React.FC = () => {
 
     try {
       const user = await login(email, password);
-      if (user) {
-        navigate(from, { replace: true });
-      } else {
+      if (!user) {
         setError('Invalid email or password. Please try again.');
       }
+      // Successful login is handled by the useEffect hook
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
+      setError((err as Error).message || 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }

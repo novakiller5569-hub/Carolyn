@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+// FIX: react-router-dom v5 uses useHistory instead of useNavigate.
 import { useNavigate } from 'react-router-dom';
 import { Movie } from '../services/types';
 import { SearchIcon } from './icons/Icons';

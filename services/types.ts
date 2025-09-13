@@ -5,7 +5,8 @@ export interface User {
   email: string;
   username: string;
   profilePic?: string;
-  passwordHash: string; // In a real app, this would be a hash. Here it's stored as-is for simplicity.
+  passwordHash: string;
+  role?: 'admin' | 'user';
 }
 
 export interface Comment {

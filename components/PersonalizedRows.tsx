@@ -12,14 +12,41 @@ import LoadingSpinner from './LoadingSpinner';
 const PersonalizedRows: React.FC = () => {
   const { currentUser } = useAuth();
   const { movies } = useMovies();
-
+  const [viewingHistory, setViewingHistory] = useState<{ movieId: string, viewedAt: string }[]>([]);
   const [aiPicks, setAiPicks] = useState<Movie[]>([]);
-  const [isLoadingAiPicks, setIsLoadingAiPicks] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const viewingHistory = useMemo(() => {
-    if (!currentUser) return [];
-    return storage.getViewingHistory(currentUser.id);
-  }, [currentUser]);
+  useEffect(() => {
+    const fetchData = async () => {
+      if (currentUser && movies.length > 0) {
+        setIsLoading(true);
+        try {
+          const data = await storage.getUserData();
+          setViewingHistory(data.history);
+
+          if (data.history.length > 0) {
+            const recs = await getAiPersonalizedRecommendations(data.history, movies);
+            if (recs) {
+              const recommendedMovies = recs
+                .map(rec => movies.find(m => m.id === rec.movieId))
+                .filter((m): m is Movie => !!m);
+              setAiPicks(recommendedMovies);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch personalized data:", error);
+          setAiPicks([]);
+          setViewingHistory([]);
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+          setIsLoading(false);
+      }
+    };
+    fetchData();
+  }, [currentUser, movies]);
+
 
   const lastWatchedMovie = useMemo(() => {
     if (viewingHistory.length === 0) return null;
@@ -33,42 +60,17 @@ const PersonalizedRows: React.FC = () => {
       .slice(0, 10);
   }, [lastWatchedMovie, movies]);
 
-
-  useEffect(() => {
-    const fetchAiPicks = async () => {
-      if (currentUser && viewingHistory.length > 0 && movies.length > 0) {
-        setIsLoadingAiPicks(true);
-        try {
-          const recs = await getAiPersonalizedRecommendations(viewingHistory, movies);
-          if (recs) {
-            const recommendedMovies = recs
-              .map(rec => movies.find(m => m.id === rec.movieId))
-              .filter((m): m is Movie => !!m);
-            setAiPicks(recommendedMovies);
-          }
-        } catch (error) {
-          console.error("Failed to fetch AI picks:", error);
-          setAiPicks([]);
-        } finally {
-          setIsLoadingAiPicks(false);
-        }
-      }
-    };
-    fetchAiPicks();
-  }, [currentUser, viewingHistory, movies]);
-
-
+  if (isLoading) {
+      return <div className="flex justify-center my-8"><LoadingSpinner text="Curating your top picks..." /></div>
+  }
+  
   if (!currentUser || viewingHistory.length === 0) {
     return null;
   }
 
   return (
     <>
-      {isLoadingAiPicks ? (
-        <div className="flex justify-center my-8"><LoadingSpinner text="Curating your top picks..." /></div>
-      ) : (
-        aiPicks.length > 0 && <MovieCarousel title="Top Picks For You" movies={aiPicks} />
-      )}
+      {aiPicks.length > 0 && <MovieCarousel title="Top Picks For You" movies={aiPicks} />}
       
       {becauseYouWatched.length > 0 && lastWatchedMovie && (
         <MovieCarousel 

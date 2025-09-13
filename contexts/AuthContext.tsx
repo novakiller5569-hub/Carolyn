@@ -3,8 +3,6 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User } from '../services/types';
 import * as storage from '../services/storageService';
 
-const ADMIN_EMAIL = 'ayeyemiademola5569@gmail.com';
-
 interface AuthContextType {
   currentUser: User | null;
   login: (email: string, password: string) => Promise<User | null>;
@@ -26,36 +24,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Check for an active session on initial load
     const session = storage.getSession();
     if (session) {
-      const user = storage.getUserById(session.userId);
-      if (user) {
-        setCurrentUser(user);
-      } else {
-        // Clear invalid session
-        storage.clearSession();
-      }
+      setCurrentUser(session.user);
     }
     setLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<User | null> => {
-    const user = storage.authenticateUser(email, password);
-    if (user) {
+    try {
+      const user = await storage.login(email, password);
       setCurrentUser(user);
-      storage.createSession(user.id);
       return user;
+    } catch (error) {
+        console.error("Login failed:", error);
+        return null;
     }
-    return null;
   };
 
   const signup = async (name: string, email: string, password: string, username: string): Promise<User | null> => {
     try {
-      const newUser = storage.addUser({ name, email, passwordHash: password, username });
+      const newUser = await storage.signup(name, email, password, username);
       setCurrentUser(newUser);
-      storage.createSession(newUser.id);
       return newUser;
     } catch (error) {
       console.error("Signup failed:", error);
-      return null;
+      // Re-throw the error so the UI can display it
+      throw error;
     }
   };
 
@@ -66,9 +59,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateCurrentUser = (user: User) => {
     setCurrentUser(user);
+    // Also update the session storage so the change persists across reloads
+    const session = storage.getSession();
+    if (session) {
+        storage.createSession({ user, token: session.token });
+    }
   };
   
-  const isAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL;
+  const isAdmin = currentUser?.role === 'admin';
   const value = { currentUser, login, signup, logout, loading, isAdmin, updateCurrentUser };
 
   return (

@@ -1,126 +1,112 @@
-// FIX: Declare 'process' to resolve TypeScript error about missing Node.js type definitions.
-declare const process: any;
-
 import TelegramBot from 'node-telegram-bot-api';
 import { handleStartCommand, handleCallbackQuery, handleMessage } from './commands';
+import { handleInlineMovieSearch } from './movieManager';
 import { clearAllUserStates } from './utils';
 import { getWeeklyDigest } from './aiHandler';
 import { getAutomationConfig, runAutonomousFinder } from './monitoringManager';
 
-// This file is required by index.ts and assumes environment checks have passed.
-
-const token = process.env.TELEGRAM_BOT_TOKEN!; // The '!' is safe because index.ts checks it.
-const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
-
-if (!adminId) {
-    console.warn("Warning: ADMIN_TELEGRAM_USER_ID is not defined. The bot will be accessible to anyone.");
-}
-
-const bot = new TelegramBot(token, { polling: true });
-
-// Clear any stale user states on startup
-clearAllUserStates();
-
-// --- SCHEDULED TASKS ---
-
-// 1. Weekly AI Performance Digest
-const scheduleWeeklyDigest = () => {
-    const now = new Date();
-    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const hour = now.getHours();
-    
-    // Target: Monday at 9 AM
-    let delay = 0;
-    const daysUntilMonday = (1 - dayOfWeek + 7) % 7;
-    
-    if (daysUntilMonday === 0 && hour >= 9) {
-        // If it's Monday but past 9 AM, schedule for next week
-        delay = 7 * 24 * 60 * 60 * 1000;
-    } else {
-        const targetDate = new Date();
-        targetDate.setDate(now.getDate() + daysUntilMonday);
-        targetDate.setHours(9, 0, 0, 0);
-        delay = targetDate.getTime() - now.getTime();
+export const runBot = () => {
+    // Gatekeeper to prevent running in unsupported environments.
+    const isNodeEnvironment = typeof window === 'undefined';
+    if (!isNodeEnvironment) {
+        console.log("Skipping Telegram bot launch: Not a Node.js environment.");
+        return;
     }
 
-    setTimeout(() => {
-        console.log("Running scheduled task: Weekly AI Performance Digest...");
-        getWeeklyDigest(bot);
-        // After the first run, set it to run every 7 days
-        setInterval(() => {
-            console.log("Running scheduled task: Weekly AI Performance Digest...");
-            getWeeklyDigest(bot);
-        }, 7 * 24 * 60 * 60 * 1000);
-    }, delay);
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const adminId = process.env.ADMIN_TELEGRAM_USER_ID;
+    const youtubeKey = process.env.YOUTUBE_API_KEY;
 
-    console.log(`Weekly AI digest is scheduled. First run in approximately ${Math.round(delay / (1000*60*60))} hours.`);
-};
-
-
-// 2. Automation Tasks
-let autonomousFinderInterval: any | null = null;
-
-const setupAutomationIntervals = () => {
-    // Clear existing intervals to allow for config reloads
-    if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
-
-    const config = getAutomationConfig();
-
-    // Setup Autonomous Movie Finder (the new system)
-    if (config.autonomousFinder.enabled && config.autonomousFinder.checkIntervalMinutes > 0) {
-        const intervalMs = config.autonomousFinder.checkIntervalMinutes * 60 * 1000;
-        autonomousFinderInterval = setInterval(() => {
-            console.log("Running scheduled task: Autonomous Movie Finder...");
-            runAutonomousFinder(bot);
-        }, intervalMs);
-        console.log(`Autonomous movie finder scheduled to run every ${config.autonomousFinder.checkIntervalMinutes} minutes.`);
-    } else {
-        console.log("Autonomous movie finder is disabled.");
+    if (!token) {
+        console.warn("⚠️ Skipping Telegram bot launch: TELEGRAM_BOT_TOKEN is not set.");
+        return;
     }
-};
+     if (!youtubeKey) {
+        console.warn("⚠️ Skipping Telegram bot launch: YOUTUBE_API_KEY is not set.");
+        return;
+    }
+    if (!adminId) {
+        console.warn("⚠️ Warning: ADMIN_TELEGRAM_USER_ID is not defined. The bot will be accessible to anyone.");
+    }
 
+    const bot = new TelegramBot(token, { polling: true });
+    clearAllUserStates();
 
-// Initial setup
-setupAutomationIntervals();
-scheduleWeeklyDigest();
+    // --- SCHEDULED TASKS ---
+    let autonomousFinderInterval: NodeJS.Timeout | null = null;
 
+    const setupAutomationIntervals = () => {
+        if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
+        const config = getAutomationConfig();
+        if (config.autonomousFinder.enabled && config.autonomousFinder.checkIntervalMinutes > 0) {
+            const intervalMs = config.autonomousFinder.checkIntervalMinutes * 60 * 1000;
+            autonomousFinderInterval = setInterval(() => {
+                console.log("🤖 Running scheduled task: Autonomous Movie Finder...");
+                runAutonomousFinder(bot);
+            }, intervalMs);
+            console.log(`🤖 Autonomous movie finder scheduled to run every ${config.autonomousFinder.checkIntervalMinutes} minutes.`);
+        } else {
+            console.log("🤖 Autonomous movie finder is disabled.");
+        }
+    };
 
-// --- SECURITY MIDDLEWARE ---
-const withAdminAuth = (handler: (msg: TelegramBot.Message) => void) => {
-    return (msg: TelegramBot.Message) => {
+    setupAutomationIntervals();
+
+    // --- SECURITY MIDDLEWARE ---
+    const withAdminAuth = (handler: (msg: TelegramBot.Message) => void) => (msg: TelegramBot.Message) => {
         if (adminId && msg.from?.id.toString() !== adminId) {
             bot.sendMessage(msg.chat.id, "⛔ Sorry, you are not authorized to use this bot.");
             return;
         }
         handler(msg);
     };
-};
 
-const withAdminAuthCallback = (handler: (query: TelegramBot.CallbackQuery) => void) => {
-    return (query: TelegramBot.CallbackQuery) => {
+    const withAdminAuthCallback = (handler: (query: TelegramBot.CallbackQuery) => void) => (query: TelegramBot.CallbackQuery) => {
         if (adminId && query.from?.id.toString() !== adminId) {
             bot.answerCallbackQuery(query.id, { text: "⛔ You are not authorized." });
             return;
         }
         handler(query);
     };
+    
+    const withAdminAuthInline = (handler: (query: TelegramBot.InlineQuery) => void) => (query: TelegramBot.InlineQuery) => {
+        if (adminId && query.from?.id.toString() !== adminId) {
+             bot.answerInlineQuery(query.id, []);
+             return;
+        }
+        handler(query);
+    };
+
+
+    // --- ROUTING ---
+    bot.onText(/\/start/, withAdminAuth((msg) => handleStartCommand(bot, msg)));
+    bot.on('callback_query', withAdminAuthCallback((query) => handleCallbackQuery(bot, query, setupAutomationIntervals)));
+    bot.on('inline_query', withAdminAuthInline((query) => handleInlineMovieSearch(bot, query)));
+    bot.on('message', withAdminAuth((msg) => {
+        // We ignore commands and messages sent via the bot's inline mode to prevent the message handler from double-firing.
+        // The `via_bot` property may not be in the type definitions, so we cast to `any` as a pragmatic workaround.
+        if (msg.text && (msg.text.startsWith('/') || (msg as any).via_bot)) return;
+        handleMessage(bot, msg);
+    }));
+    bot.on('photo', withAdminAuth((msg) => handleMessage(bot, msg)));
+    
+    console.log("✅ Telegram Bot is running!");
+    
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+        console.log("SIGINT received. Shutting down bot polling...");
+        if(autonomousFinderInterval) clearInterval(autonomousFinderInterval);
+        bot.stopPolling().then(() => {
+            console.log("Bot polling stopped.");
+            process.exit(0);
+        });
+    });
+    process.on('SIGTERM', () => {
+        console.log("SIGTERM received. Shutting down bot polling...");
+        if(autonomousFinderInterval) clearInterval(autonomousFinderInterval);
+        bot.stopPolling().then(() => {
+            console.log("Bot polling stopped.");
+            process.exit(0);
+        });
+    });
 };
-
-
-// --- ROUTING ---
-bot.onText(/\/start/, withAdminAuth((msg) => handleStartCommand(bot, msg)));
-bot.on('callback_query', withAdminAuthCallback((query) => handleCallbackQuery(bot, query, setupAutomationIntervals)));
-bot.on('message', withAdminAuth((msg) => {
-    if (msg.text && msg.text.startsWith('/')) return;
-    handleMessage(bot, msg);
-}));
-bot.on('photo', withAdminAuth((msg) => handleMessage(bot, msg)));
-
-console.log("✅ Yoruba Cinemax Admin Bot is running!");
-
-process.on('SIGINT', () => {
-    console.log("Bot is shutting down...");
-    if (autonomousFinderInterval) clearInterval(autonomousFinderInterval);
-    bot.stopPolling().catch(err => console.error("Error stopping polling:", err));
-    process.exit();
-});

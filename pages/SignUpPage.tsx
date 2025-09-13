@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
+// FIX: react-router-dom v5 uses useHistory instead of useNavigate.
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import * as storage from '../services/storageService';
 import * as analytics from '../services/analyticsService';
 import { FilmIcon } from '../components/icons/Icons';
 
@@ -33,7 +33,7 @@ const SignUpPage: React.FC = () => {
     const location = useLocation();
     const { signup, currentUser } = useAuth();
 
-    const from = location.state?.from || '/';
+    const from = (location.state as { from?: string })?.from || '/';
 
     useEffect(() => {
         if (currentUser) {
@@ -49,28 +49,19 @@ const SignUpPage: React.FC = () => {
           setError('Please use a valid Gmail address without "." or "+" aliases.');
           return;
       }
-
-      if (storage.getUserByEmail(email)) {
-          setError('An account with this email already exists.');
-          return;
-      }
-      
-      if (storage.isUsernameTaken(username)) {
-          setError('This username is already taken. Please choose another.');
-          return;
-      }
       
       setIsLoading(true);
       try {
         const user = await signup(name, email, password, username);
         if (user) {
           analytics.logSignup();
-          navigate(from, { replace: true });
+          // Successful signup is handled by the useEffect hook
         } else {
+           // This case may not be hit if signup throws, but good for safety
           setError('Failed to create an account. Please try again.');
         }
       } catch (err) {
-        setError('An unexpected error occurred. Please try again.');
+        setError((err as Error).message || 'An unexpected error occurred. Please try again.');
       } finally {
         setIsLoading(false);
       }

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { runChat } from '../services/geminiService';
@@ -150,7 +149,7 @@ const AiChatPopup: React.FC = () => {
       const aiMessage: ChatMessage = { sender: 'ai', text: responseText, movie: aiResponse.movie, sources: aiResponse.sources };
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
-      console.error("Gemini API error:", error);
+      console.error("AI API error:", error);
       const errorMessage: ChatMessage = { sender: 'ai', text: "Sorry, I'm having trouble connecting right now. Please try again later." };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -216,28 +215,6 @@ const AiChatPopup: React.FC = () => {
                     </div>
                   </div>
                 </Link>
-              )}
-               {msg.sources && msg.sources.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-600">
-                  <h4 className="text-xs font-semibold text-gray-400 mb-1 flex items-center gap-1.5">
-                    <GlobeIcon />
-                    Sources from the web:
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {msg.sources.map((source, i) => (
-                      <a
-                        key={i}
-                        href={source.uri}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 px-2 py-1 rounded-full transition-colors truncate max-w-[200px]"
-                        title={source.title}
-                      >
-                        {source.title}
-                      </a>
-                    ))}
-                  </div>
-                </div>
               )}
             </div>
           </div>

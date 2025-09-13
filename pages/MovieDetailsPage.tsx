@@ -1,16 +1,17 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import MovieCard from '../components/MovieCard';
 import { StarIcon, UserIcon, ReplyIcon, ChevronDownIcon, ChevronUpIcon, BotIcon, SparklesIcon, ThumbsUpIcon, BookmarkIcon, FacebookIcon, XSocialIcon, ChevronLeftIcon, ChevronRightIcon, XIcon, WhatsAppIcon, TelegramIcon } from '../components/icons/Icons';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { Comment, Movie } from '../services/types';
+import { Comment, Movie, User } from '../services/types';
 import { getAiRecommendations } from '../services/geminiService';
 import BackButton from '../components/BackButton';
 import { useMovies } from '../contexts/MovieContext';
 import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storageService';
 import * as analytics from '../services/analyticsService';
+import * as commentService from '../services/commentService';
 
 
 // --- SOCIAL SHARE COMPONENT ---
@@ -57,24 +58,30 @@ const CommentForm: React.FC<{
     const [commentText, setCommentText] = useState('');
     const [rating, setRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!commentText.trim() || !currentUser) return;
-
-        const newComment: Omit<Comment, 'id' | 'replies'> = {
-            parentId,
-            reviewer: currentUser.name,
-            userId: currentUser.id,
-            comment: commentText.trim(),
-            date: new Date().toISOString(),
-            rating: parentId === null && rating > 0 ? rating : undefined,
-        };
-        storage.addComment(movieId, newComment);
-        onCommentAdded();
-        setCommentText('');
-        setRating(0);
-        if (onCancel) onCancel();
+        if (!commentText.trim() || !currentUser || isSubmitting) return;
+        
+        setIsSubmitting(true);
+        setError('');
+        try {
+            await commentService.addComment(movieId, {
+                comment: commentText.trim(),
+                parentId,
+                rating: parentId === null && rating > 0 ? rating : undefined,
+            });
+            onCommentAdded();
+            setCommentText('');
+            setRating(0);
+            if (onCancel) onCancel();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to post comment.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -111,14 +118,15 @@ const CommentForm: React.FC<{
                     </div>
                 </div>
             )}
+            {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex justify-end gap-2">
                 {onCancel && (
                     <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-600 rounded-md hover:bg-gray-500 transition-colors">
                         Cancel
                     </button>
                 )}
-                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors disabled:opacity-50" disabled={!commentText.trim()}>
-                    {submitLabel}
+                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors disabled:opacity-50" disabled={!commentText.trim() || isSubmitting}>
+                    {isSubmitting ? 'Submitting...' : submitLabel}
                 </button>
             </div>
         </form>
@@ -129,44 +137,55 @@ const CommentForm: React.FC<{
 const CommentItem: React.FC<{
   movieId: string;
   comment: Comment;
+  upvotes: string[]; // User IDs who upvoted
   onCommentChange: () => void;
-}> = ({ movieId, comment, onCommentChange }) => {
+}> = ({ movieId, comment, upvotes, onCommentChange }) => {
     const [showReplyForm, setShowReplyForm] = useState(false);
     const [showReplies, setShowReplies] = useState(true);
     const { currentUser, isAdmin } = useAuth();
     
-    const commentUser = useMemo(() => storage.getUserById(comment.userId), [comment.userId]);
-    const isOwner = commentUser?.email === 'ayeyemiademola5569@gmail.com';
+    // This is now just for display purposes; the backend holds the truth.
+    const [optimisticUpvotes, setOptimisticUpvotes] = useState(upvotes);
 
-    const [upvoteCount, setUpvoteCount] = useState(() => storage.getUpvotes(comment.id).length);
-    const [hasUpvoted, setHasUpvoted] = useState(() => 
-        currentUser ? storage.getUpvotes(comment.id).includes(currentUser.id) : false
-    );
+    // FIX: User data now comes from the session, not a separate storage call.
+    // This part of the logic is simplified as the backend handles user data.
+    const commentUser = { name: comment.reviewer, id: comment.userId, role: comment.reviewer === 'Yoruba Cinemax' ? 'admin' : 'user' };
+    const isOwner = commentUser?.role === 'admin';
 
-    const handleUpvote = () => {
-        if (currentUser) {
-            setHasUpvoted(prev => !prev);
-            setUpvoteCount(prev => hasUpvoted ? prev - 1 : prev + 1);
-            storage.toggleUpvote(comment.id, currentUser.id);
-        } else {
+    const handleUpvote = async () => {
+        if (!currentUser) {
             alert("Please log in to upvote comments.");
+            return;
+        }
+        const hasUpvoted = optimisticUpvotes.includes(currentUser.id);
+        // Optimistic update
+        setOptimisticUpvotes(prev => hasUpvoted ? prev.filter(id => id !== currentUser.id) : [...prev, currentUser.id]);
+        try {
+            await commentService.toggleUpvote(comment.id);
+            onCommentChange(); // Re-fetch from server to ensure sync
+        } catch (error) {
+            console.error(error);
+            setOptimisticUpvotes(upvotes); // Revert on error
+            alert("Failed to save upvote. Please try again.");
         }
     };
     
-    const handleDeleteComment = () => {
+    const handleDeleteComment = async () => {
         if (window.confirm("Are you sure you want to delete this comment and all its replies?")) {
-            storage.deleteComment(movieId, comment.id);
-            onCommentChange(); // Refresh the comment list
+            try {
+                await commentService.deleteComment(movieId, comment.id);
+                onCommentChange(); // Refresh the comment list
+            } catch (error) {
+                alert("Failed to delete comment.");
+            }
         }
     };
 
-    const UserAvatar: React.FC = () => {
+    const UserAvatar: React.FC<{ user: { name: string, id: string } }> = ({ user }) => {
         if (comment.isAI) {
             return <div className="w-10 h-10 flex-shrink-0 bg-green-500 rounded-full flex items-center justify-center"><BotIcon className="w-6 h-6"/></div>;
         }
-        if (commentUser?.profilePic) {
-            return <img src={commentUser.profilePic} alt={commentUser.name} className="w-10 h-10 flex-shrink-0 rounded-full object-cover" />;
-        }
+        // In a real app with profile pics, this would fetch the user's pic
         return <div className="w-10 h-10 flex-shrink-0 bg-gray-700 rounded-full flex items-center justify-center"><UserIcon className="w-6 h-6 text-gray-400" /></div>;
     };
 
@@ -175,14 +194,14 @@ const CommentItem: React.FC<{
         <div className={`ml-${comment.parentId ? '6' : '0'} mt-4`}>
             <div className="flex items-start space-x-3">
                  <div className="flex-shrink-0">
-                    <UserAvatar />
+                    <UserAvatar user={commentUser} />
                 </div>
                 <div className="flex-1">
                     <div className="bg-gray-800 rounded-lg p-3 border border-gray-700/50">
                         <div className="flex items-center justify-between">
                             <p className="font-bold text-white flex items-center gap-2">
                                 {comment.reviewer}
-                                {isOwner && <span className="text-xs font-bold text-gray-900 bg-yellow-400 px-2 py-0.5 rounded-full shadow">Owner</span>}
+                                {isOwner && <span className="text-xs font-bold text-gray-900 bg-yellow-400 px-2 py-0.5 rounded-full shadow">Admin</span>}
                             </p>
                             <span className="text-xs text-gray-500">{new Date(comment.date).toLocaleDateString()}</span>
                         </div>
@@ -201,15 +220,15 @@ const CommentItem: React.FC<{
                                 <ReplyIcon className="w-3 h-3"/> Reply
                             </button>
                         )}
-                        <button onClick={handleUpvote} className={`flex items-center gap-1 text-xs transition-colors ${hasUpvoted ? 'text-green-400 font-bold' : 'text-gray-400 hover:text-green-400'}`}>
-                            <ThumbsUpIcon className="w-3 h-3"/> {upvoteCount}
+                        <button onClick={handleUpvote} className={`flex items-center gap-1 text-xs transition-colors ${currentUser && optimisticUpvotes.includes(currentUser.id) ? 'text-green-400 font-bold' : 'text-gray-400 hover:text-green-400'}`}>
+                            <ThumbsUpIcon className="w-3 h-3"/> {optimisticUpvotes.length}
                         </button>
                         {isAdmin && (
                              <button onClick={handleDeleteComment} className="flex items-center gap-1 text-xs text-red-500 hover:text-red-400 transition-colors">
                                 <XIcon className="w-3 h-3"/> Delete
                              </button>
                         )}
-                        {comment.replies.length > 0 && (
+                        {comment.replies && comment.replies.length > 0 && (
                              <button onClick={() => setShowReplies(!showReplies)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
                                 {showReplies ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}
                                 {comment.replies.length} {comment.replies.length > 1 ? 'replies' : 'reply'}
@@ -232,10 +251,10 @@ const CommentItem: React.FC<{
                     />
                 </div>
             )}
-            {showReplies && comment.replies.length > 0 && (
+            {showReplies && comment.replies && comment.replies.length > 0 && (
                 <div className="border-l-2 border-gray-700 ml-5 pl-1">
                     {comment.replies.map(reply => (
-                        <CommentItem key={reply.id} movieId={movieId} comment={reply} onCommentChange={onCommentChange} />
+                        <CommentItem key={reply.id} movieId={movieId} comment={reply} upvotes={upvotes[reply.id] || []} onCommentChange={onCommentChange} />
                     ))}
                 </div>
             )}
@@ -247,13 +266,26 @@ const CommentItem: React.FC<{
 // --- COMMENTS SECTION COMPONENT ---
 const CommentsSection: React.FC<{ movie: Movie }> = ({ movie }) => {
     const [comments, setComments] = useState<Comment[]>([]);
+    const [upvotes, setUpvotes] = useState<Record<string, string[]>>({});
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    
     const { currentUser } = useAuth();
-    const navigate = useNavigate();
+    const location = useLocation();
 
-    const fetchComments = useCallback(() => {
-        const movieComments = storage.getComments(movie.id);
-        const nestedComments = storage.nestComments(movieComments);
-        setComments(nestedComments);
+    const fetchComments = useCallback(async () => {
+        if (!movie.id) return;
+        setIsLoading(true);
+        setError(null);
+        try {
+            const data = await commentService.getCommentsForMovie(movie.id);
+            setComments(data.comments);
+            setUpvotes(data.upvotes);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load comments.');
+        } finally {
+            setIsLoading(false);
+        }
     }, [movie.id]);
 
     useEffect(() => {
@@ -271,7 +303,10 @@ const CommentsSection: React.FC<{ movie: Movie }> = ({ movie }) => {
                     <div className="text-center p-6 bg-gray-800 border border-gray-700 rounded-lg">
                         <p className="text-gray-300">You must be logged in to leave a comment.</p>
                         <div className="mt-4">
-                            <Link to="/login" state={{ from: window.location.hash.substring(1) }} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors">
+                            <Link 
+                                to="/login"
+                                state={{ from: location.pathname }}
+                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors">
                                 Login or Sign Up
                             </Link>
                         </div>
@@ -279,12 +314,15 @@ const CommentsSection: React.FC<{ movie: Movie }> = ({ movie }) => {
                 )}
             </div>
             <div>
-                {comments.length > 0 ? (
-                    comments.map(comment => (
-                        <CommentItem key={comment.id} movieId={movie.id} comment={comment} onCommentChange={fetchComments} />
-                    ))
-                ) : (
+                {isLoading && <LoadingSpinner text="Loading comments..." />}
+                {error && <p className="text-center text-red-400">{error}</p>}
+                {!isLoading && !error && comments.length === 0 && (
                     <p className="text-gray-500 text-center py-4">Be the first to leave a comment!</p>
+                )}
+                {!isLoading && !error && comments.length > 0 && (
+                    comments.map(comment => (
+                        <CommentItem key={comment.id} movieId={movie.id} comment={comment} upvotes={upvotes[comment.id] || []} onCommentChange={fetchComments} />
+                    ))
                 )}
             </div>
         </section>
@@ -339,6 +377,8 @@ const MovieDetailsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const [aiRecs, setAiRecs] = useState<{ movie: Movie, reason: string }[] | null>(null);
   const [isLoadingRecs, setIsLoadingRecs] = useState(true);
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
 
   const movie = useMemo(() => movies.find((m) => m.id === id), [id, movies]);
 
@@ -349,27 +389,40 @@ const MovieDetailsPage: React.FC = () => {
         .sort((a, b) => (a.partNumber || 1) - (b.partNumber || 1));
   }, [movie, movies]);
 
-  const [inWatchlist, setInWatchlist] = useState(currentUser && movie ? storage.isInWatchlist(currentUser.id, movie.id) : false);
-
   useEffect(() => {
-    if (currentUser && movie) {
-      setInWatchlist(storage.isInWatchlist(currentUser.id, movie.id));
-    }
+    const checkWatchlist = async () => {
+        if (currentUser && movie) {
+            setWatchlistLoading(true);
+            const data = await storage.getUserData();
+            setInWatchlist(data.watchlist.includes(movie.id));
+            setWatchlistLoading(false);
+        } else {
+            setWatchlistLoading(false);
+        }
+    };
+    checkWatchlist();
   }, [currentUser, movie]);
   
-  const handleWatchlistToggle = () => {
-    if (currentUser && movie) {
-      storage.toggleWatchlist(currentUser.id, movie.id);
-      setInWatchlist(!inWatchlist);
-    } else {
-      alert('Please log in to manage your watchlist.');
+  const handleWatchlistToggle = async () => {
+    if (currentUser && movie && !watchlistLoading) {
+        setWatchlistLoading(true);
+        try {
+            await storage.toggleWatchlist(movie.id);
+            setInWatchlist(!inWatchlist);
+        } catch (error) {
+            alert('Failed to update watchlist. Please try again.');
+        } finally {
+            setWatchlistLoading(false);
+        }
+    } else if (!currentUser) {
+        alert('Please log in to manage your watchlist.');
     }
   };
 
   useEffect(() => {
     window.scrollTo(0, 0);
     if (currentUser && id) {
-        storage.addToViewingHistory(currentUser.id, id);
+        storage.addToViewingHistory(id);
     }
     if (movie) {
         analytics.logMovieClick(movie.id, movie.title);
@@ -494,9 +547,9 @@ const MovieDetailsPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-4 mt-8">
                     <DownloadButton />
                     {currentUser && (
-                         <button onClick={handleWatchlistToggle} className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 transform hover:scale-105 ${inWatchlist ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-900'}`}>
+                         <button onClick={handleWatchlistToggle} disabled={watchlistLoading} className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-wait ${inWatchlist ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-900'}`}>
                             <BookmarkIcon className="w-5 h-5"/>
-                            {inWatchlist ? 'On Watchlist' : 'Add to Watchlist'}
+                            {watchlistLoading ? 'Updating...' : (inWatchlist ? 'On Watchlist' : 'Add to Watchlist')}
                         </button>
                     )}
                 </div>

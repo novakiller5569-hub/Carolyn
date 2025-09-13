@@ -1,141 +1,38 @@
 
-import { User, Comment, Upvote } from './types';
+import { User } from './types';
 
 /**
- * NOTE: This is a client-side storage solution using localStorage for demonstration purposes.
- * It simulates a backend database. In a production application, all of this data
- * (users, comments, etc.) would be stored securely on a server and accessed via an API.
- * Storing sensitive information like user data directly in localStorage is not secure.
+ * NOTE: This service has been refactored into a secure API client. It no longer stores
+ * user accounts, watchlists, or history in localStorage. Instead, it makes authenticated
+ * requests to a new server-side API endpoint (/api/users) which manages the data centrally.
+ * This ensures user data is persistent, secure, and accessible across all devices.
+ *
+ * Session tokens are still managed here using localStorage, which is a standard and correct practice.
  */
 
-// --- CACHING LAYER ---
-// In-memory cache to reduce redundant reads and parsing from localStorage.
-const cache = {
-    users: null as User[] | null,
-    comments: null as Record<string, Comment[]> | null,
-    upvotes: null as Record<string, string[]> | null,
-    watchlists: null as Record<string, string[]> | null,
-    histories: null as Record<string, { movieId: string, viewedAt: string }[]> | null,
-};
 
-
-// --- UTILITY FUNCTIONS ---
-const getItem = <T>(key: string, defaultValue: T): T => {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
-  } catch (error) {
-    console.error(`Error reading from localStorage key “${key}”:`, error);
-    return defaultValue;
-  }
-};
-
-const setItem = <T>(key: string, value: T): void => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.error(`Error writing to localStorage key “${key}”:`, error);
-  }
-};
-
-// --- INITIAL DATA SEEDING ---
-const initializeData = () => {
-    if(!localStorage.getItem('YC_INITIALIZED_V3')) { // Bump version to trigger updates
-        localStorage.removeItem('YC_COMMENTS');
-        localStorage.setItem('YC_INITIALIZED_V3', 'true');
+// --- API HELPERS ---
+const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+    const response = await fetch(`/api/users${endpoint}`, options);
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || 'An API error occurred');
     }
-
-    // Seed/update the admin user.
-    const seedAdminUser = () => {
-        const adminEmail = 'ayeyemiademola5569@gmail.com';
-        let users = getUsers();
-        const adminUser = users.find(u => u.email === adminEmail);
-
-        if (!adminUser) {
-            addUser({
-                name: 'Yoruba Cinemax', // Set admin name to site name
-                email: adminEmail,
-                passwordHash: 'Ademola5569',
-                username: 'yorubacinemax_admin'
-            });
-            console.log('Admin user seeded successfully.');
-        } else if (adminUser.name !== 'Yoruba Cinemax') {
-            // If admin exists but has the old name, update it
-            adminUser.name = 'Yoruba Cinemax';
-            saveUsers(users);
-            console.log('Admin user name updated.');
-        }
-    };
-    seedAdminUser();
+    return data;
 };
 
-// --- USER MANAGEMENT ---
-export const getUsers = (): User[] => {
-    if (cache.users) return cache.users;
-    const users = getItem<User[]>('YC_USERS', []);
-    cache.users = users;
-    return users;
-}
-export const saveUsers = (users: User[]): void => {
-    setItem('YC_USERS', users);
-    cache.users = null; // Invalidate cache
-};
-
-export const addUser = (userData: Omit<User, 'id' | 'profilePic'>): User => {
-    const users = getUsers();
-    const newUser: User = { 
-        ...userData, 
-        id: `user_${new Date().getTime()}`,
-        profilePic: undefined
-    };
-    saveUsers([...users, newUser]);
-    return newUser;
-};
-
-export const getUserByEmail = (email: string): User | undefined => {
-    return getUsers().find(user => user.email.toLowerCase() === email.toLowerCase());
-};
-export const getUserById = (id: string): User | undefined => {
-    return getUsers().find(user => user.id === id);
-};
-
-export const isUsernameTaken = (username: string, excludeUserId?: string): boolean => {
-    const lowercasedUsername = username.toLowerCase();
-    return getUsers().some(user => user.id !== excludeUserId && user.username.toLowerCase() === lowercasedUsername);
-};
-
-export const updateUserProfile = (userId: string, updates: Partial<Pick<User, 'name' | 'username' | 'profilePic'>>): User | null => {
-    const users = getUsers();
-    const userIndex = users.findIndex(u => u.id === userId);
-    if (userIndex === -1) return null;
-
-    const updatedUser = { ...users[userIndex], ...updates };
-    users[userIndex] = updatedUser;
-    
-    saveUsers(users);
-    return updatedUser;
-};
-
-export const authenticateUser = (email: string, password: string): User | null => {
-    const user = getUserByEmail(email);
-    // NOTE: This is a plain text password comparison. NEVER do this in production.
-    // Always hash passwords on a server.
-    if (user && user.passwordHash === password) {
-        return user;
-    }
-    return null;
-};
-
-// --- SESSION MANAGEMENT ---
+// --- SESSION MANAGEMENT (Client-Side) ---
 const SESSION_DURATION = 3 * 24 * 60 * 60 * 1000; // 3 days
 
-export const createSession = (userId: string): void => {
+export const createSession = (sessionData: { token: string, user: User }): void => {
     const expires = Date.now() + SESSION_DURATION;
-    setItem('YC_SESSION', { userId, expires });
+    localStorage.setItem('YC_SESSION', JSON.stringify({ ...sessionData, expires }));
 };
 
-export const getSession = (): { userId: string; expires: number } | null => {
-    const session = getItem<{ userId: string; expires: number } | null>('YC_SESSION', null);
+export const getSession = (): { token: string, user: User, expires: number } | null => {
+    const sessionStr = localStorage.getItem('YC_SESSION');
+    if (!sessionStr) return null;
+    const session = JSON.parse(sessionStr);
     if (session && session.expires > Date.now()) {
         return session;
     }
@@ -146,185 +43,102 @@ export const getSession = (): { userId: string; expires: number } | null => {
 export const clearSession = (): void => localStorage.removeItem('YC_SESSION');
 
 
-// --- COMMENTS & UPVOTES ---
-// This function gets all comments from storage. It's designed to be global,
-// ensuring that comments from all users are fetched together, resolving the visibility issue.
-const getAllComments = (): Record<string, Comment[]> => {
-    // Bypassing cache for read to ensure fresh data and fix visibility bug
-    const comments = getItem('YC_COMMENTS', {});
-    cache.comments = comments;
-    return comments;
-}
-const saveAllComments = (allComments: Record<string, Comment[]>): void => {
-    setItem('YC_COMMENTS', allComments);
-    cache.comments = null; // Invalidate cache after writing
-}
-
-export const getComments = (movieId: string): Comment[] => {
-    const allComments = getAllComments();
-    return allComments[movieId] || [];
+// --- USER MANAGEMENT (Server-Side API Calls) ---
+export const signup = async (name: string, email: string, password: string, username: string): Promise<User> => {
+    const { user, token } = await apiFetch('/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, username }),
+    });
+    createSession({ user, token });
+    return user;
 };
 
-export const addComment = (movieId: string, commentData: Omit<Comment, 'id' | 'replies'>): void => {
-    const allComments = getAllComments();
-    const movieComments = allComments[movieId] || [];
-    const newComment: Comment = {
-        ...commentData,
-        id: `comment_${new Date().getTime()}`,
-        replies: [],
-    };
-    allComments[movieId] = [...movieComments, newComment];
-    saveAllComments(allComments);
+export const login = async (email: string, password: string): Promise<User> => {
+    const { user, token } = await apiFetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+    createSession({ user, token });
+    return user;
 };
 
-export const deleteComment = (movieId: string, commentId: string): void => {
-    const allComments = getAllComments();
-    let movieComments = allComments[movieId] || [];
-    if (!movieComments.length) return;
+export const isUsernameTaken = (username: string, excludeUserId?: string): Promise<boolean> => {
+    // This validation logic is now handled by the backend during signup/update.
+    // This client-side check is removed as the server is the source of truth.
+    return Promise.resolve(false); 
+};
 
-    const commentsToDelete = new Set<string>([commentId]);
-    let changed = true;
+
+export const updateUserProfile = async (updates: Partial<Pick<User, 'name' | 'username' | 'profilePic'>>): Promise<User> => {
+    const session = getSession();
+    if (!session) throw new Error('Not authenticated');
+
+    const { user, token } = await apiFetch('/profile', {
+        method: 'PUT',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.token}`
+        },
+        body: JSON.stringify(updates),
+    });
+    // Refresh the session with the updated user data
+    createSession({ user, token });
+    return user;
+};
+
+
+// --- WATCHLIST & HISTORY (Server-Side API Calls) ---
+
+interface UserData {
+    watchlist: string[];
+    history: { movieId: string, viewedAt: string }[];
+}
+
+export const getUserData = async (): Promise<UserData> => {
+    const session = getSession();
+    if (!session) return { watchlist: [], history: [] };
     
-    // Iteratively find all replies of replies to ensure the entire thread is deleted.
-    while (changed) {
-        changed = false;
-        const currentSize = commentsToDelete.size;
-        movieComments.forEach(comment => {
-            if (comment.parentId && commentsToDelete.has(comment.parentId)) {
-                commentsToDelete.add(comment.id);
-            }
+    return apiFetch('/data', {
+        headers: { 'Authorization': `Bearer ${session.token}` }
+    });
+};
+
+export const toggleWatchlist = async (movieId: string): Promise<string[]> => {
+    const session = getSession();
+    if (!session) throw new Error('Not authenticated');
+    
+    const { watchlist } = await apiFetch('/watchlist', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.token}`
+        },
+        body: JSON.stringify({ movieId }),
+    });
+    return watchlist;
+};
+
+export const addToViewingHistory = async (movieId: string): Promise<void> => {
+    const session = getSession();
+    if (!session) return; // Fail silently for history
+
+    try {
+        await apiFetch('/history', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.token}`
+            },
+            body: JSON.stringify({ movieId }),
         });
-        if (commentsToDelete.size > currentSize) {
-            changed = true;
-        }
-    }
-    
-    const newComments = movieComments.filter(comment => !commentsToDelete.has(comment.id));
-    
-    if (newComments.length < movieComments.length) {
-        allComments[movieId] = newComments;
-        saveAllComments(allComments);
+    } catch (error) {
+        console.warn("Could not save viewing history:", error);
     }
 };
 
 
-export const nestComments = (comments: Comment[]): Comment[] => {
-    const commentMap = new Map<string, Comment>();
-    const rootComments: Comment[] = [];
-    
-    comments.forEach(c => {
-        c.replies = []; // Reset replies before nesting
-        commentMap.set(c.id, c);
-    });
-
-    comments.forEach(c => {
-        if (c.parentId && commentMap.has(c.parentId)) {
-            commentMap.get(c.parentId)!.replies.push(c);
-        } else {
-            rootComments.push(c);
-        }
-    });
-
-    return rootComments.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-};
-
-const getAllUpvotes = (): Record<string, string[]> => {
-    if (cache.upvotes) return cache.upvotes;
-    const upvotes = getItem('YC_UPVOTES', {});
-    cache.upvotes = upvotes;
-    return upvotes;
-}
-const saveAllUpvotes = (allUpvotes: Record<string, string[]>): void => {
-    setItem('YC_UPVOTES', allUpvotes);
-    cache.upvotes = null; // Invalidate cache
-}
-
-export const getUpvotes = (commentId: string): string[] => {
-    return getAllUpvotes()[commentId] || [];
-};
-
-export const toggleUpvote = (commentId: string, userId: string): void => {
-    const allUpvotes = getAllUpvotes();
-    let commentUpvotes = allUpvotes[commentId] || [];
-    
-    if(commentUpvotes.includes(userId)) {
-        commentUpvotes = commentUpvotes.filter(id => id !== userId);
-    } else {
-        commentUpvotes.push(userId);
-    }
-    
-    allUpvotes[commentId] = commentUpvotes;
-    saveAllUpvotes(allUpvotes);
-};
-
-
-// --- WATCHLIST ---
-const getWatchlists = (): Record<string, string[]> => {
-    if (cache.watchlists) return cache.watchlists;
-    const watchlists = getItem('YC_WATCHLISTS', {});
-    cache.watchlists = watchlists;
-    return watchlists;
-}
-const saveWatchlists = (watchlists: Record<string, string[]>): void => {
-    setItem('YC_WATCHLISTS', watchlists);
-    cache.watchlists = null; // Invalidate cache
-}
-
-export const getWatchlist = (userId: string): string[] => {
-    return getWatchlists()[userId] || [];
-};
-
-export const isInWatchlist = (userId: string, movieId: string): boolean => {
-    return getWatchlist(userId).includes(movieId);
-};
-
-export const toggleWatchlist = (userId: string, movieId: string): void => {
-    const allWatchlists = getWatchlists();
-    let userWatchlist = allWatchlists[userId] || [];
-
-    if (userWatchlist.includes(movieId)) {
-        userWatchlist = userWatchlist.filter(id => id !== movieId);
-    } else {
-        userWatchlist.push(movieId);
-    }
-
-    allWatchlists[userId] = userWatchlist;
-    saveWatchlists(allWatchlists);
-};
-
-// --- VIEWING HISTORY ---
-const getHistories = (): Record<string, { movieId: string, viewedAt: string }[]> => {
-    if (cache.histories) return cache.histories;
-    const histories = getItem('YC_HISTORY', {});
-    cache.histories = histories;
-    return histories;
-}
-const saveHistories = (histories: Record<string, { movieId: string, viewedAt: string }[]>): void => {
-    setItem('YC_HISTORY', histories);
-    cache.histories = null; // Invalidate cache
-}
-
-export const getViewingHistory = (userId: string): { movieId: string, viewedAt: string }[] => {
-    return (getHistories()[userId] || []).sort((a, b) => new Date(b.viewedAt).getTime() - new Date(a.viewedAt).getTime());
-};
-
-export const addToViewingHistory = (userId: string, movieId: string): void => {
-    const allHistories = getHistories();
-    let userHistory = allHistories[userId] || [];
-    
-    // Remove if it already exists to move it to the top
-    userHistory = userHistory.filter(item => item.movieId !== movieId);
-    // Add to the beginning of the array
-    userHistory.unshift({ movieId, viewedAt: new Date().toISOString() });
-    
-    // Keep history to a reasonable length, e.g., 50 movies
-    if (userHistory.length > 50) {
-        userHistory = userHistory.slice(0, 50);
-    }
-
-    allHistories[userId] = userHistory;
-    saveHistories(allHistories);
-};
-
-// Initialize data only after all functions have been defined.
-initializeData();
+// --- DEPRECATED MIGRATION LOGIC (No longer needed) ---
+// The original initializeData and user retrieval functions are removed
+// as all user data is now managed by the secure backend.

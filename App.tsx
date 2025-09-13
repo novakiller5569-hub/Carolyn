@@ -1,10 +1,11 @@
 
 import React, { lazy, Suspense, useEffect } from 'react';
+// FIX: react-router-dom v5 syntax has been updated to v6/v7.
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import AiChatPopup from './components/AiChatPopup';
-import SecurityProtections from './components/SecurityProtections';
+import ProtectedRoute from './components/ProtectedRoute';
 import { STATIC_PAGES } from './constants';
 import LoadingSpinner from './components/LoadingSpinner';
 import { MovieProvider } from './contexts/MovieContext';
@@ -39,7 +40,6 @@ const App: React.FC = () => {
       <AuthProvider>
         <MovieProvider>
           <HashRouter>
-            <SecurityProtections />
             <div className="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
               <AnnouncementBanner />
               <Header />
@@ -57,10 +57,12 @@ const App: React.FC = () => {
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/signup" element={<SignUpPage />} />
                     <Route path="/actor/:name" element={<ActorPage />} />
-                    <Route path="/watchlist" element={<WatchlistPage />} />
                     <Route path="/collections" element={<CollectionsPage />} />
-                    <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/live-tv" element={<LiveTvPage />} />
+                    
+                    {/* Protected Routes */}
+                    <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
+                    <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
                   </Routes>
                 </Suspense>
               </main>

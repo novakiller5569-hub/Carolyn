@@ -17,7 +17,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/genai": "^1.17.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.602.0",
     "node-telegram-bot-api": "^0.66.0"
   },
   "devDependencies": {
